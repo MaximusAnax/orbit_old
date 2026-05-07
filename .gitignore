@@ -1,0 +1,11 @@
+.next
+node_modules
+.env
+.env.local
+.env.production
+.vercel
+playwright-report
+test-results
+coverage
+.DS_Store
+supabase/.temp
