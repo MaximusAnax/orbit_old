@@ -54,6 +54,39 @@ function getOpenAIClient() {
   return new OpenAI({ apiKey });
 }
 
+export async function runReliableAiCall<T>(
+  operation: () => Promise<T>,
+  options: {
+    operationName: string;
+    timeoutMs?: number;
+    retries?: number;
+  },
+) {
+  const timeoutMs = options.timeoutMs ?? 20_000;
+  const retries = options.retries ?? 1;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await Promise.race([
+        operation(),
+        new Promise<T>((_, reject) => {
+          setTimeout(() => reject(new Error(`${options.operationName} timed out after ${timeoutMs}ms.`)), timeoutMs);
+        }),
+      ]);
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`${options.operationName} failed.`);
+}
+
 function inferSentiment(rawText: string): ExtractionResult["interaction"]["sentiment"] {
   const lower = rawText.toLowerCase();
   if (/(excited|great|warm|helpful|loved|promising|fun)/.test(lower)) return "positive";
@@ -64,12 +97,12 @@ function inferSentiment(rawText: string): ExtractionResult["interaction"]["senti
 
 function heuristicallyExtract(rawText: string): ExtractionResult {
   const nameMatch =
-    rawText.match(/\b(?:met|with|about|to)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})/) ??
+    rawText.match(/\b(?:met|with|about|to)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})/i) ??
     rawText.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\b/);
   const orgMatch = rawText.match(/\b(?:at|from)\s+([A-Z][A-Za-z0-9&.\- ]{1,60})/);
   const roleMatch = rawText.match(/\b(?:who is|she's|he's|they're|works as|as)\s+([^.,;\n]{2,60})/i);
 
-  const name = nameMatch?.[1]?.trim() || "Unknown contact";
+  const name = nameMatch?.[1]?.trim().replace(/\s+(?:from|at)$/i, "") || "Unknown contact";
   const org = orgMatch?.[1]?.trim() || null;
   const role = roleMatch?.[1]?.trim() || null;
   const context = rawText.split(/[.!?]/)[0]?.trim() || rawText.trim();
@@ -106,33 +139,37 @@ export async function extractMemory(rawText: string) {
     return heuristicallyExtract(rawText);
   }
 
-  const response = await client.responses.create({
-    model: EXTRACTION_MODEL,
-    input: [
-      {
-        role: "system",
-        content: [
+  const response = await runReliableAiCall(
+    () =>
+      client.responses.create({
+        model: EXTRACTION_MODEL,
+        input: [
           {
-            type: "input_text",
-            text:
-              "Extract contact memory details from the user's note. Keep tags short, infer a humane follow-up window, and return only valid JSON that matches the schema.",
+            role: "system",
+            content: [
+              {
+                type: "input_text",
+                text:
+                  "Extract contact memory details from the user's note. Keep tags short, infer a humane follow-up window, and return only valid JSON that matches the schema.",
+              },
+            ],
+          },
+          {
+            role: "user",
+            content: [{ type: "input_text", text: rawText }],
           },
         ],
-      },
-      {
-        role: "user",
-        content: [{ type: "input_text", text: rawText }],
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "orbit_memory_extraction",
-        strict: true,
-        schema: extractionJsonSchema,
-      },
-    },
-  } as never);
+        text: {
+          format: {
+            type: "json_schema",
+            name: "orbit_memory_extraction",
+            strict: true,
+            schema: extractionJsonSchema,
+          },
+        },
+      } as never),
+    { operationName: "memory extraction", timeoutMs: 25_000, retries: 1 },
+  );
 
   const parsed = JSON.parse(response.output_text);
   return extractionResultSchema.parse({
@@ -164,10 +201,14 @@ export async function embedText(text: string) {
     return pseudoEmbedding(text);
   }
 
-  const response = await client.embeddings.create({
-    model: EMBEDDING_MODEL,
-    input: text,
-  });
+  const response = await runReliableAiCall(
+    () =>
+      client.embeddings.create({
+        model: EMBEDDING_MODEL,
+        input: text,
+      }),
+    { operationName: "embedding generation", timeoutMs: 15_000, retries: 1 },
+  );
 
   return response.data[0]?.embedding ?? pseudoEmbedding(text);
 }

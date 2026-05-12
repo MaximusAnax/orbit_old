@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { embedText } from "@/lib/orbit/ai";
 import { trackServerEvent } from "@/lib/orbit/events";
-import { buildSearchText, calculateFollowUpAt, decideMatch } from "@/lib/orbit/normalize";
+import { buildSearchText, calculateFollowUpAt, decideMatch, selectProfilesForMatching } from "@/lib/orbit/normalize";
+import {
+  claimPendingCapture,
+  markPendingCaptureCommitted,
+  parsePendingCaptureExtraction,
+} from "@/lib/orbit/pending-captures";
 import { serializeVector } from "@/lib/orbit/vector";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ProfileRecord } from "@/lib/types";
@@ -20,15 +25,42 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const input = commitMemorySchema.parse(body);
-    const normalizedName = input.extraction.matchHints.normalizedName;
+    const anonymousId = request.headers.get("x-orbit-anonymous-id");
+    const pendingCapture = await claimPendingCapture(input.captureId, anonymousId);
+
+    if (
+      pendingCapture?.status === "committed" &&
+      pendingCapture.profile_id &&
+      pendingCapture.interaction_id
+    ) {
+      return NextResponse.json({
+        profileId: pendingCapture.profile_id,
+        interactionId: pendingCapture.interaction_id,
+        captureId: input.captureId,
+        deduped: true,
+      });
+    }
+
+    const extraction = input.extraction ?? (pendingCapture ? parsePendingCaptureExtraction(pendingCapture) : null);
+    const rawText = input.rawText ?? pendingCapture?.raw_content ?? null;
+
+    if (!extraction || !rawText) {
+      return NextResponse.json(
+        { error: "Pending capture could not be restored. Please extract the note again." },
+        { status: 409 },
+      );
+    }
+
+    const normalizedName = extraction.matchHints.normalizedName;
 
     const { data: existingProfiles } = await supabase
       .from("profiles")
       .select("*")
-      .eq("normalized_name", normalizedName)
-      .limit(5);
+      .order("updated_at", { ascending: false })
+      .limit(50);
 
-    const decision = decideMatch((existingProfiles ?? []) as ProfileRecord[], input.extraction, input.resolution);
+    const candidateProfiles = selectProfilesForMatching((existingProfiles ?? []) as ProfileRecord[], extraction);
+    const decision = decideMatch(candidateProfiles, extraction, input.resolution);
 
     if (decision.mode === "needs_confirmation") {
       return NextResponse.json(
@@ -41,8 +73,8 @@ export async function POST(request: Request) {
     }
 
     const interactionDate = new Date();
-    const followUpAt = calculateFollowUpAt(interactionDate, input.extraction.suggestedFollowUpDays);
-    const searchText = buildSearchText(input.extraction, input.rawText);
+    const followUpAt = calculateFollowUpAt(interactionDate, extraction.suggestedFollowUpDays);
+    const searchText = buildSearchText(extraction, rawText);
     const embedding = serializeVector(await embedText(searchText));
 
     let profileId = decision.selectedProfileId;
@@ -52,17 +84,17 @@ export async function POST(request: Request) {
         .from("profiles")
         .insert({
           user_id: user.id,
-          full_name: input.extraction.contact.name,
+          full_name: extraction.contact.name,
           normalized_name: normalizedName,
-          current_org: input.extraction.contact.org,
-          job_role: input.extraction.contact.role,
+          current_org: extraction.contact.org,
+          job_role: extraction.contact.role,
           metadata: {
             source: "capture",
-            context: input.extraction.interaction.context,
+            context: extraction.interaction.context,
           },
           last_interaction_at: interactionDate.toISOString(),
           next_follow_up_at: followUpAt,
-          follow_up_interval_days: input.extraction.suggestedFollowUpDays,
+          follow_up_interval_days: extraction.suggestedFollowUpDays,
         })
         .select("*")
         .single();
@@ -76,11 +108,11 @@ export async function POST(request: Request) {
       const { error: updateError } = await supabase
         .from("profiles")
         .update({
-          current_org: input.extraction.contact.org,
-          job_role: input.extraction.contact.role,
+          current_org: extraction.contact.org,
+          job_role: extraction.contact.role,
           last_interaction_at: interactionDate.toISOString(),
           next_follow_up_at: followUpAt,
-          follow_up_interval_days: input.extraction.suggestedFollowUpDays,
+          follow_up_interval_days: extraction.suggestedFollowUpDays,
         })
         .eq("id", profileId);
 
@@ -89,17 +121,21 @@ export async function POST(request: Request) {
       }
     }
 
+    if (!profileId) {
+      throw new Error("Unable to determine which profile to save.");
+    }
+
     const { data: interaction, error: interactionError } = await supabase
       .from("interactions")
       .insert({
         profile_id: profileId,
         user_id: user.id,
-        raw_content: input.rawText,
-        structured_summary: input.extraction.interaction.summary,
+        raw_content: rawText,
+        structured_summary: extraction.interaction.summary,
         search_text: searchText,
-        tags: input.extraction.tags,
-        sentiment: input.extraction.interaction.sentiment,
-        suggested_follow_up_days: input.extraction.suggestedFollowUpDays,
+        tags: extraction.tags,
+        sentiment: extraction.interaction.sentiment,
+        suggested_follow_up_days: extraction.suggestedFollowUpDays,
         embedding,
         interaction_date: interactionDate.toISOString(),
       })
@@ -110,17 +146,27 @@ export async function POST(request: Request) {
       throw interactionError ?? new Error("Unable to create interaction.");
     }
 
+    await markPendingCaptureCommitted({
+      captureId: input.captureId,
+      userId: user.id,
+      profileId,
+      interactionId: interaction.id,
+    }).catch(() => undefined);
+
     await trackServerEvent(supabase, {
       eventName: "memory_saved",
-      anonymousId: request.headers.get("x-orbit-anonymous-id") ?? undefined,
+      anonymousId: anonymousId ?? undefined,
       userId: user.id,
       payload: {
+        captureId: input.captureId,
         profileId,
         interactionId: interaction.id,
+        timeToMemoryMs: input.captureStartedAtMs ? Date.now() - input.captureStartedAtMs : null,
       },
     });
 
     return NextResponse.json({
+      captureId: input.captureId,
       profileId,
       interactionId: interaction.id,
     });

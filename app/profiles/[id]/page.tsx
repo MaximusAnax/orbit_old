@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { FollowUpActions } from "@/components/app/follow-up-actions";
+import { ProfileEditor } from "@/components/app/profile-editor";
+import { RelationshipActions } from "@/components/app/relationship-actions";
 import { getProfileById } from "@/lib/data";
 import { formatLongDate, formatRelativeDate } from "@/lib/utils";
 
@@ -40,6 +43,7 @@ export default async function ProfilePage({
               <p className="mt-3 text-lg text-[var(--muted)]">
                 {[profile.job_role, profile.current_org].filter(Boolean).join(" · ") || "Role and company inferred from your notes"}
               </p>
+              <ProfileEditor profile={profile} />
             </div>
 
             <div className="grid gap-4 rounded-[1.5rem] border border-[var(--line)] bg-white/65 p-5 text-sm text-[var(--muted)] md:min-w-[280px]">
@@ -57,9 +61,12 @@ export default async function ProfilePage({
                 <div className="font-semibold text-[var(--foreground)]">Cadence</div>
                 <p className="mt-1">{profile.follow_up_interval_days ?? 21} day rhythm</p>
               </div>
+              <FollowUpActions profileId={profile.id} />
             </div>
           </div>
         </section>
+
+        <RelationshipActions profileId={profile.id} />
 
         <section className="mt-6">
           <div className="mb-4 flex items-center justify-between">

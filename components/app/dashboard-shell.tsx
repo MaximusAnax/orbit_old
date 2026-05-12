@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { InteractionRecord, ProfileRecord } from "@/lib/types";
 import { formatLongDate, formatRelativeDate } from "@/lib/utils";
+import { FollowUpActions } from "@/components/app/follow-up-actions";
 import { PostAuthCommitter } from "@/components/app/post-auth-committer";
 import { SearchPanel } from "@/components/app/search-panel";
 
@@ -23,10 +24,12 @@ function FollowUpColumn({
       <div className="mt-5 grid gap-3">
         {profiles.length ? (
           profiles.map((profile) => (
-            <Link key={profile.id} className="rounded-[1.25rem] border border-[var(--line)] bg-white/75 p-4 transition hover:border-[var(--accent)]" href={`/profiles/${profile.id}`}>
+            <article key={profile.id} className="rounded-[1.25rem] border border-[var(--line)] bg-white/75 p-4 transition hover:border-[var(--accent)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-semibold text-[var(--foreground)]">{profile.full_name}</div>
+                  <Link className="font-semibold text-[var(--foreground)] transition hover:text-[var(--accent)]" href={`/profiles/${profile.id}`}>
+                    {profile.full_name}
+                  </Link>
                   <p className="mt-1 text-sm text-[var(--muted)]">
                     {[profile.job_role, profile.current_org].filter(Boolean).join(" · ") || "Profile inferred from your notes"}
                   </p>
@@ -35,7 +38,8 @@ function FollowUpColumn({
                   {formatRelativeDate(profile.next_follow_up_at)}
                 </span>
               </div>
-            </Link>
+              <FollowUpActions profileId={profile.id} compact />
+            </article>
           ))
         ) : (
           <p className="rounded-[1.25rem] border border-dashed border-[var(--line)] px-4 py-6 text-center text-sm text-[var(--muted)]">

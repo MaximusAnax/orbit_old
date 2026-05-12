@@ -3,8 +3,10 @@ export const APP_NAME = "Orbit";
 export const LOCAL_STORAGE_KEYS = {
   draftRawText: "orbit:draft-raw-text",
   draftExtraction: "orbit:draft-extraction",
+  draftCaptureId: "orbit:draft-capture-id",
   pendingCommit: "orbit:pending-commit",
   anonymousId: "orbit:anonymous-id",
+  captureStartedAt: "orbit:capture-started-at",
 } as const;
 
 export const DEFAULT_FOLLOW_UP_DAYS = 21;

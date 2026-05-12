@@ -8,6 +8,7 @@ import type { ExtractionResult } from "@/lib/validators";
 import type { MatchCandidate } from "@/lib/orbit/normalize";
 
 interface PendingCommitPayload {
+  captureId: string;
   rawText: string;
   extraction: ExtractionResult;
 }
@@ -18,29 +19,36 @@ export function PostAuthCommitter() {
   const [status, setStatus] = useState<"idle" | "saving" | "needs_resolution">("idle");
   const [candidates, setCandidates] = useState<MatchCandidate[]>([]);
   const [pendingCommit, setPendingCommit] = useState<PendingCommitPayload | null>(null);
+  const [pendingCaptureId, setPendingCaptureId] = useState<string | null>(null);
 
   const commit = useCallback(
     async (
-      payload: PendingCommitPayload,
+      payload: PendingCommitPayload | null,
+      captureId: string,
       resolution: { type: "auto" } | { type: "create_new" } | { type: "link_existing"; profileId: string },
     ) => {
       setStatus("saving");
+      const captureStartedAtMs = Number(window.localStorage.getItem(LOCAL_STORAGE_KEYS.captureStartedAt) ?? Date.now());
+      const anonymousId = window.localStorage.getItem(LOCAL_STORAGE_KEYS.anonymousId);
 
       const response = await fetch("/api/memories/commit", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(anonymousId ? { "x-orbit-anonymous-id": anonymousId } : {}),
         },
         body: JSON.stringify({
-          rawText: payload.rawText,
-          extraction: payload.extraction,
+          captureId,
+          rawText: payload?.rawText,
+          extraction: payload?.extraction,
           resolution,
+          captureStartedAtMs,
         }),
       });
 
       const data = await response.json();
 
-      if (response.status === 409) {
+      if (response.status === 409 && data.requiresResolution) {
         setCandidates(data.candidates ?? []);
         setStatus("needs_resolution");
         return;
@@ -55,6 +63,8 @@ export function PostAuthCommitter() {
       window.localStorage.removeItem(LOCAL_STORAGE_KEYS.pendingCommit);
       window.localStorage.removeItem(LOCAL_STORAGE_KEYS.draftRawText);
       window.localStorage.removeItem(LOCAL_STORAGE_KEYS.draftExtraction);
+      window.localStorage.removeItem(LOCAL_STORAGE_KEYS.draftCaptureId);
+      window.localStorage.removeItem(LOCAL_STORAGE_KEYS.captureStartedAt);
       router.push(`/profiles/${data.profileId}?saved=1`);
     },
     [router],
@@ -63,15 +73,23 @@ export function PostAuthCommitter() {
   useEffect(() => {
     if (searchParams.get("postAuth") !== "1") return;
 
+    const captureId = searchParams.get("captureId");
     const stored = window.localStorage.getItem(LOCAL_STORAGE_KEYS.pendingCommit);
-    if (!stored) {
+    if (!stored && !captureId) {
       router.replace("/app");
       return;
     }
 
-    const parsed = JSON.parse(stored) as PendingCommitPayload;
+    const parsed = stored ? (JSON.parse(stored) as PendingCommitPayload) : null;
+    const nextCaptureId = parsed?.captureId ?? captureId;
+    if (!nextCaptureId) {
+      router.replace("/app");
+      return;
+    }
+
     setPendingCommit(parsed);
-    void commit(parsed, { type: "auto" });
+    setPendingCaptureId(nextCaptureId);
+    void commit(parsed, nextCaptureId, { type: "auto" });
   }, [router, searchParams, commit]);
 
   if (status === "idle") return null;
@@ -88,7 +106,7 @@ export function PostAuthCommitter() {
         </div>
       ) : null}
 
-      {status === "needs_resolution" && pendingCommit ? (
+      {status === "needs_resolution" && pendingCaptureId ? (
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">Quick confirmation</p>
           <h3 className="section-title mt-2 text-2xl">This note might match someone you already know.</h3>
@@ -104,7 +122,7 @@ export function PostAuthCommitter() {
                   "rounded-[1.25rem] border border-[var(--line)] bg-white/70 p-4 text-left transition hover:border-[var(--accent)] hover:bg-white",
                 )}
                 onClick={() => {
-                  void commit(pendingCommit, { type: "link_existing", profileId: candidate.profileId });
+                  void commit(pendingCommit, pendingCaptureId, { type: "link_existing", profileId: candidate.profileId });
                 }}
               >
                 <div className="font-semibold text-[var(--foreground)]">{candidate.fullName}</div>
@@ -120,7 +138,7 @@ export function PostAuthCommitter() {
           <button
             className="mt-4 rounded-full border border-[var(--line)] px-4 py-2 text-sm font-semibold transition hover:bg-white/80"
             onClick={() => {
-              void commit(pendingCommit, { type: "create_new" });
+              void commit(pendingCommit, pendingCaptureId, { type: "create_new" });
             }}
           >
             Create a new profile instead

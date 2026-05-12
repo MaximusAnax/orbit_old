@@ -106,6 +106,27 @@ export function scoreProfileMatch(profile: ProfileRecord, extraction: Extraction
   };
 }
 
+export function selectProfilesForMatching(profiles: ProfileRecord[], extraction: ExtractionResult) {
+  const normalizedName = normalizeName(extraction.contact.name);
+  const normalizedOrg = normalizeOrg(extraction.contact.org);
+  const nameParts = new Set(normalizedName.split(" ").filter((part) => part.length > 1));
+
+  return profiles
+    .filter((profile) => {
+      const profileName = normalizeName(profile.full_name);
+      const profileOrg = normalizeOrg(profile.current_org);
+      const hasNameOverlap =
+        profile.normalized_name === normalizedName ||
+        profile.normalized_name.includes(normalizedName) ||
+        normalizedName.includes(profile.normalized_name) ||
+        profileName.split(" ").some((part) => nameParts.has(part));
+      const hasOrgOverlap = Boolean(normalizedOrg && profileOrg && normalizedOrg === profileOrg);
+
+      return hasNameOverlap || hasOrgOverlap;
+    })
+    .slice(0, 10);
+}
+
 export function decideMatch(
   profiles: ProfileRecord[],
   extraction: ExtractionResult,

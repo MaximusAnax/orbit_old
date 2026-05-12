@@ -37,6 +37,43 @@ export interface InteractionRecord {
   created_at: string;
 }
 
+export interface PendingCaptureRecord {
+  id: string;
+  user_id: string | null;
+  anonymous_id: string;
+  raw_content: string;
+  extraction: Json;
+  status: "pending" | "committed";
+  profile_id: string | null;
+  interaction_id: string | null;
+  committed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ReminderStatus = "due" | "snoozed" | "contacted" | "paused" | "sent" | "failed" | "skipped";
+
+export interface ReminderRecord {
+  id: string;
+  user_id: string;
+  profile_id: string;
+  status: ReminderStatus;
+  due_at: string;
+  sent_at: string | null;
+  payload: Record<string, Json>;
+  created_at: string;
+}
+
+export interface NotificationPreferenceRecord {
+  user_id: string;
+  daily_digest_enabled: boolean;
+  paused_until: string | null;
+  unsubscribed_at: string | null;
+  timezone: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SearchInteractionRow {
   interaction_id: string;
   profile_id: string;
@@ -44,6 +81,7 @@ export interface SearchInteractionRow {
   current_org: string | null;
   job_role: string | null;
   structured_summary: string;
+  search_text?: string;
   raw_content: string;
   tags: string[];
   sentiment: Sentiment;
@@ -57,6 +95,7 @@ export interface SearchResultGroup {
   currentOrg: string | null;
   currentRole: string | null;
   topSimilarity: number;
+  whyMatched: string[];
   matches: Array<{
     interactionId: string;
     summary: string;

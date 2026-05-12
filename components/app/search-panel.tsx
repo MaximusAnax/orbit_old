@@ -110,6 +110,16 @@ export function SearchPanel() {
               </span>
             </div>
 
+            {result.whyMatched.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {result.whyMatched.map((reason) => (
+                  <span key={reason} className="rounded-full border border-[var(--line)] bg-white/70 px-2.5 py-1 text-xs text-[var(--muted)]">
+                    {reason}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+
             <div className="mt-4 grid gap-3">
               {result.matches.slice(0, 2).map((match) => (
                 <div key={match.interactionId} className="rounded-[1.15rem] border border-[var(--line)] bg-white p-4">

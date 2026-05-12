@@ -52,26 +52,36 @@ alter table public.profiles enable row level security;
 alter table public.interactions enable row level security;
 alter table public.events enable row level security;
 
+drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own" on public.profiles
   for select using (auth.uid() = user_id);
+drop policy if exists "profiles_insert_own" on public.profiles;
 create policy "profiles_insert_own" on public.profiles
   for insert with check (auth.uid() = user_id);
+drop policy if exists "profiles_update_own" on public.profiles;
 create policy "profiles_update_own" on public.profiles
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "profiles_delete_own" on public.profiles;
 create policy "profiles_delete_own" on public.profiles
   for delete using (auth.uid() = user_id);
 
+drop policy if exists "interactions_select_own" on public.interactions;
 create policy "interactions_select_own" on public.interactions
   for select using (auth.uid() = user_id);
+drop policy if exists "interactions_insert_own" on public.interactions;
 create policy "interactions_insert_own" on public.interactions
   for insert with check (auth.uid() = user_id);
+drop policy if exists "interactions_update_own" on public.interactions;
 create policy "interactions_update_own" on public.interactions
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "interactions_delete_own" on public.interactions;
 create policy "interactions_delete_own" on public.interactions
   for delete using (auth.uid() = user_id);
 
+drop policy if exists "events_select_own" on public.events;
 create policy "events_select_own" on public.events
   for select using (auth.uid() = user_id or user_id is null);
+drop policy if exists "events_insert_any" on public.events;
 create policy "events_insert_any" on public.events
   for insert with check (auth.uid() = user_id or user_id is null);
 
@@ -90,7 +100,9 @@ create trigger profiles_set_updated_at
 before update on public.profiles
 for each row execute function public.set_updated_at();
 
-create or replace function public.search_interactions(
+drop function if exists public.search_interactions(vector(1536), integer);
+
+create function public.search_interactions(
   p_query_embedding vector(1536),
   p_match_count integer default 5
 )
