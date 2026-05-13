@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useDeferredValue, useEffect, useState } from "react";
 import type { SearchResultGroup } from "@/lib/types";
 import { formatLongDate } from "@/lib/utils";
+import { Badge, EmptyState, Panel, TextInput } from "@/components/ui/primitives";
 
 async function trackSearchResultOpened(profileId: string) {
   await fetch("/api/events", {
@@ -67,19 +68,17 @@ export function SearchPanel() {
   }, [deferredQuery]);
 
   return (
-    <section className="glass rounded-[2rem] p-6">
+    <Panel className="p-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">Semantic recall</p>
-          <h2 className="section-title mt-2 text-3xl">Search by vibe, event, or loose memory.</h2>
+          <p className="eyebrow">Semantic recall</p>
+          <h2 className="section-title mt-1 text-2xl font-black">Search by vibe, event, or loose memory.</h2>
         </div>
-        <div className="rounded-full border border-[var(--line)] px-3 py-1 text-xs text-[var(--muted)]">
-          {isSearching ? "Searching..." : "Vector-backed"}
-        </div>
+        <Badge>{isSearching ? "Searching..." : "Vector-backed"}</Badge>
       </div>
 
-      <input
-        className="mt-5 w-full rounded-[1.25rem] border border-[var(--line)] bg-white/78 px-4 py-3 outline-none focus:border-[var(--accent)]"
+      <TextInput
+        className="mt-5"
         placeholder="People I met at TartanHacks who care about ML infra"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
@@ -89,11 +88,11 @@ export function SearchPanel() {
 
       <div className="mt-5 grid gap-4">
         {results.map((result) => (
-          <article key={result.profileId} className="rounded-[1.5rem] border border-[var(--line)] bg-white/75 p-5">
+          <article key={result.profileId} className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <Link
-                  className="section-title text-2xl transition hover:text-[var(--accent)]"
+                  className="text-lg font-black transition hover:text-[var(--accent)]"
                   href={`/profiles/${result.profileId}`}
                   onClick={() => {
                     void trackSearchResultOpened(result.profileId);
@@ -105,15 +104,13 @@ export function SearchPanel() {
                   {[result.currentRole, result.currentOrg].filter(Boolean).join(" · ") || "Profile inferred from captured notes"}
                 </p>
               </div>
-              <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--accent)]">
-                {Math.round(result.topSimilarity * 100)}% match
-              </span>
+              <Badge tone="accent">{Math.round(result.topSimilarity * 100)}% match</Badge>
             </div>
 
             {result.whyMatched.length ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {result.whyMatched.map((reason) => (
-                  <span key={reason} className="rounded-full border border-[var(--line)] bg-white/70 px-2.5 py-1 text-xs text-[var(--muted)]">
+                  <span key={reason} className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 text-xs text-[var(--muted)]">
                     {reason}
                   </span>
                 ))}
@@ -122,7 +119,7 @@ export function SearchPanel() {
 
             <div className="mt-4 grid gap-3">
               {result.matches.slice(0, 2).map((match) => (
-                <div key={match.interactionId} className="rounded-[1.15rem] border border-[var(--line)] bg-white p-4">
+                <div key={match.interactionId} className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] p-4">
                   <div className="flex items-center justify-between gap-4 text-sm text-[var(--muted)]">
                     <span>{formatLongDate(match.interactionDate)}</span>
                     <span>{match.sentiment}</span>
@@ -131,7 +128,7 @@ export function SearchPanel() {
                   {match.tags.length ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {match.tags.map((tag) => (
-                        <span key={tag} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-xs text-[var(--muted)]">
+                        <span key={tag} className="rounded-[var(--radius)] border border-[var(--line)] px-2.5 py-1 text-xs text-[var(--muted)]">
                           {tag}
                         </span>
                       ))}
@@ -144,11 +141,9 @@ export function SearchPanel() {
         ))}
 
         {!results.length && query.trim().length >= 2 && !isSearching ? (
-          <p className="rounded-[1.5rem] border border-dashed border-[var(--line)] px-4 py-6 text-center text-sm text-[var(--muted)]">
-            No matches yet. Capture a few memories first, then search by context, place, or topic.
-          </p>
+          <EmptyState title="No matches yet" description="Capture a few memories first, then search by context, place, or topic." />
         ) : null}
       </div>
-    </section>
+    </Panel>
   );
 }

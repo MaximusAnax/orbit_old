@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LOCAL_STORAGE_KEYS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { Button, Panel } from "@/components/ui/primitives";
 import type { ExtractionResult } from "@/lib/validators";
 import type { MatchCandidate } from "@/lib/orbit/normalize";
 
@@ -95,11 +96,11 @@ export function PostAuthCommitter() {
   if (status === "idle") return null;
 
   return (
-    <div className="glass mb-6 rounded-[1.75rem] p-5">
+    <Panel className="mb-5 p-5">
       {status === "saving" ? (
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">Saving memory</p>
+            <p className="eyebrow">Saving memory</p>
             <p className="mt-2 text-sm text-[var(--muted)]">Orbit is linking this capture to the right person and writing it into your timeline.</p>
           </div>
           <div className="h-9 w-9 animate-spin rounded-full border-2 border-[var(--accent-soft)] border-t-[var(--accent)]" />
@@ -108,8 +109,8 @@ export function PostAuthCommitter() {
 
       {status === "needs_resolution" && pendingCaptureId ? (
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">Quick confirmation</p>
-          <h3 className="section-title mt-2 text-2xl">This note might match someone you already know.</h3>
+          <p className="eyebrow">Quick confirmation</p>
+          <h3 className="section-title mt-2 text-2xl font-black">This note might match someone you already know.</h3>
           <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
             Pick the existing profile if it’s the same person, or create a fresh one if this is a different contact.
           </p>
@@ -119,7 +120,7 @@ export function PostAuthCommitter() {
               <button
                 key={candidate.profileId}
                 className={cn(
-                  "rounded-[1.25rem] border border-[var(--line)] bg-white/70 p-4 text-left transition hover:border-[var(--accent)] hover:bg-white",
+                  "rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-raised)] p-4 text-left transition hover:border-[var(--accent)]",
                 )}
                 onClick={() => {
                   void commit(pendingCommit, pendingCaptureId, { type: "link_existing", profileId: candidate.profileId });
@@ -135,16 +136,16 @@ export function PostAuthCommitter() {
             ))}
           </div>
 
-          <button
-            className="mt-4 rounded-full border border-[var(--line)] px-4 py-2 text-sm font-semibold transition hover:bg-white/80"
+          <Button
+            className="mt-4"
             onClick={() => {
               void commit(pendingCommit, pendingCaptureId, { type: "create_new" });
             }}
           >
             Create a new profile instead
-          </button>
+          </Button>
         </div>
       ) : null}
-    </div>
+    </Panel>
   );
 }

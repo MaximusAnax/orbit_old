@@ -1,30 +1,39 @@
 "use client";
 
 import Link from "next/link";
+import { Bell, Orbit, Plus } from "lucide-react";
 import type { InteractionRecord, ProfileRecord } from "@/lib/types";
 import { formatLongDate, formatRelativeDate } from "@/lib/utils";
 import { FollowUpActions } from "@/components/app/follow-up-actions";
 import { PostAuthCommitter } from "@/components/app/post-auth-committer";
 import { SearchPanel } from "@/components/app/search-panel";
+import { Badge, EmptyState, IconBox, LinkButton, Panel } from "@/components/ui/primitives";
 
 function FollowUpColumn({
   title,
   subtitle,
+  tone,
   profiles,
 }: {
   title: string;
   subtitle: string;
+  tone: "danger" | "accent";
   profiles: ProfileRecord[];
 }) {
   return (
-    <section className="glass rounded-[2rem] p-6">
-      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">{subtitle}</p>
-      <h2 className="section-title mt-2 text-3xl">{title}</h2>
+    <Panel className="p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="eyebrow">{subtitle}</p>
+          <h2 className="section-title mt-1 text-2xl font-black">{title}</h2>
+        </div>
+        <Badge tone={tone === "danger" ? "danger" : "accent"}>{profiles.length}</Badge>
+      </div>
 
       <div className="mt-5 grid gap-3">
         {profiles.length ? (
           profiles.map((profile) => (
-            <article key={profile.id} className="rounded-[1.25rem] border border-[var(--line)] bg-white/75 p-4 transition hover:border-[var(--accent)]">
+            <article key={profile.id} className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-raised)] p-4 transition hover:border-[var(--accent)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <Link className="font-semibold text-[var(--foreground)] transition hover:text-[var(--accent)]" href={`/profiles/${profile.id}`}>
@@ -34,20 +43,16 @@ function FollowUpColumn({
                     {[profile.job_role, profile.current_org].filter(Boolean).join(" · ") || "Profile inferred from your notes"}
                   </p>
                 </div>
-                <span className="rounded-full bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--accent)]">
-                  {formatRelativeDate(profile.next_follow_up_at)}
-                </span>
+                <Badge tone={tone === "danger" ? "danger" : "accent"}>{formatRelativeDate(profile.next_follow_up_at)}</Badge>
               </div>
               <FollowUpActions profileId={profile.id} compact />
             </article>
           ))
         ) : (
-          <p className="rounded-[1.25rem] border border-dashed border-[var(--line)] px-4 py-6 text-center text-sm text-[var(--muted)]">
-            No profiles in this lane yet.
-          </p>
+          <EmptyState title="Clear for now" description="No profiles in this follow-up lane yet." />
         )}
       </div>
-    </section>
+    </Panel>
   );
 }
 
@@ -61,13 +66,13 @@ function RecentCaptures({
   >;
 }) {
   return (
-    <section className="glass rounded-[2rem] p-6">
+    <Panel className="p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">Recent captures</p>
-          <h2 className="section-title mt-2 text-3xl">The freshest moments in orbit.</h2>
+          <p className="eyebrow">Recent captures</p>
+          <h2 className="section-title mt-1 text-2xl font-black">Fresh memory stream</h2>
         </div>
-        <Link className="text-sm text-[var(--muted)] transition hover:text-[var(--foreground)]" href="/">
+        <Link className="text-sm font-semibold text-[var(--muted-strong)] transition hover:text-[var(--foreground)]" href="/">
           Capture another
         </Link>
       </div>
@@ -75,7 +80,7 @@ function RecentCaptures({
       <div className="mt-5 grid gap-4">
         {interactions.length ? (
           interactions.map((interaction) => (
-            <article key={interaction.id} className="rounded-[1.35rem] border border-[var(--line)] bg-white/75 p-5">
+            <article key={interaction.id} className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <Link className="font-semibold text-[var(--foreground)] transition hover:text-[var(--accent)]" href={`/profiles/${interaction.profile_id}`}>
@@ -87,16 +92,14 @@ function RecentCaptures({
                 </div>
                 <span className="text-sm text-[var(--muted)]">{formatLongDate(interaction.interaction_date)}</span>
               </div>
-              <p className="mt-4 leading-7 text-[var(--foreground)]">{interaction.structured_summary}</p>
+              <p className="mt-3 text-sm leading-6 text-[var(--foreground)]">{interaction.structured_summary}</p>
             </article>
           ))
         ) : (
-          <p className="rounded-[1.25rem] border border-dashed border-[var(--line)] px-4 py-6 text-center text-sm text-[var(--muted)]">
-            No saved memories yet. Use the capture surface to create your first one.
-          </p>
+          <EmptyState title="No saved memories yet" description="Use the capture surface to create your first relationship memory." action={<LinkButton href="/" tone="primary">Capture a note</LinkButton>} />
         )}
       </div>
-    </section>
+    </Panel>
   );
 }
 
@@ -113,29 +116,59 @@ export function DashboardShell({
     }
   >;
 }) {
+  const totalFollowUps = overdue.length + upcoming.length;
+  const totalMemories = recent.length;
+
   return (
-    <main className="min-h-screen bg-transparent py-8">
+    <main className="min-h-screen bg-transparent py-6">
       <div className="shell">
-        <header className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">Orbit dashboard</p>
-            <h1 className="section-title mt-2 text-5xl">People you should remember before they go cold.</h1>
+        <header className="mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] pb-4">
+          <div className="flex items-center gap-3">
+            <IconBox>
+              <Orbit aria-hidden="true" />
+            </IconBox>
+            <div>
+              <p className="eyebrow">Orbit dashboard</p>
+              <h1 className="section-title text-3xl font-black">Search your memory</h1>
+            </div>
           </div>
-          <Link className="rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90" href="/">
-            Capture a new note
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <LinkButton href="/settings/notifications">
+              <Bell aria-hidden="true" className="size-4" />
+              Notification settings
+            </LinkButton>
+            <LinkButton href="/" tone="primary">
+              <Plus aria-hidden="true" className="size-4" />
+              Capture a new note
+            </LinkButton>
+          </div>
         </header>
 
         <PostAuthCommitter />
 
-        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <section className="mb-5 grid gap-3 sm:grid-cols-3">
+          <Panel className="p-4">
+            <p className="text-sm font-semibold text-[var(--muted)]">Follow-ups</p>
+            <p className="mt-2 text-3xl font-black">{totalFollowUps}</p>
+          </Panel>
+          <Panel className="p-4">
+            <p className="text-sm font-semibold text-[var(--muted)]">Recent memories</p>
+            <p className="mt-2 text-3xl font-black">{totalMemories}</p>
+          </Panel>
+          <Panel className="p-4">
+            <p className="text-sm font-semibold text-[var(--muted)]">Recall mode</p>
+            <p className="mt-2 text-lg font-black">Semantic</p>
+          </Panel>
+        </section>
+
+        <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
           <SearchPanel />
           <RecentCaptures interactions={recent} />
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          <FollowUpColumn title="Needs attention now" subtitle="Going cold" profiles={overdue} />
-          <FollowUpColumn title="Upcoming soon" subtitle="Stay warm" profiles={upcoming} />
+        <div className="mt-5 grid gap-5 lg:grid-cols-2">
+          <FollowUpColumn title="Needs attention now" subtitle="Going cold" tone="danger" profiles={overdue} />
+          <FollowUpColumn title="Upcoming soon" subtitle="Stay warm" tone="accent" profiles={upcoming} />
         </div>
       </div>
     </main>

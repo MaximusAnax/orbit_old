@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ProfileRecord } from "@/lib/types";
+import { Button, Panel, TextInput } from "@/components/ui/primitives";
 
 export function ProfileEditor({ profile }: { profile: ProfileRecord }) {
   const router = useRouter();
@@ -38,13 +39,9 @@ export function ProfileEditor({ profile }: { profile: ProfileRecord }) {
 
   if (!isEditing) {
     return (
-      <button
-        className="rounded-full border border-[var(--line)] px-4 py-2 text-sm font-semibold transition hover:bg-white/80"
-        onClick={() => setIsEditing(true)}
-        type="button"
-      >
+      <Button onClick={() => setIsEditing(true)} type="button">
         Edit profile
-      </button>
+      </Button>
     );
   }
 
@@ -53,38 +50,32 @@ export function ProfileEditor({ profile }: { profile: ProfileRecord }) {
       action={(formData) => {
         void submit(formData);
       }}
-      className="mt-6 grid gap-4 rounded-[1.5rem] border border-[var(--line)] bg-white/65 p-5"
+      className="mt-5 grid gap-4"
     >
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Name" name="fullName" defaultValue={profile.full_name} required />
-        <Field label="Company" name="currentOrg" defaultValue={profile.current_org ?? ""} />
-        <Field label="Role" name="jobRole" defaultValue={profile.job_role ?? ""} />
-        <Field
-          label="Cadence days"
-          name="followUpIntervalDays"
-          defaultValue={String(profile.follow_up_interval_days ?? 21)}
-          type="number"
-        />
-      </div>
+      <Panel className="grid gap-4 p-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Name" name="fullName" defaultValue={profile.full_name} required />
+          <Field label="Company" name="currentOrg" defaultValue={profile.current_org ?? ""} />
+          <Field label="Role" name="jobRole" defaultValue={profile.job_role ?? ""} />
+          <Field
+            label="Cadence days"
+            name="followUpIntervalDays"
+            defaultValue={String(profile.follow_up_interval_days ?? 21)}
+            type="number"
+          />
+        </div>
 
-      {error ? <p className="text-sm text-[#a54634]">{error}</p> : null}
+        {error ? <p className="text-sm text-[#a54634]">{error}</p> : null}
 
-      <div className="flex flex-wrap gap-3">
-        <button
-          className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-          disabled={isPending}
-          type="submit"
-        >
-          Save changes
-        </button>
-        <button
-          className="rounded-full border border-[var(--line)] px-4 py-2 text-sm font-semibold transition hover:bg-white/80"
-          onClick={() => setIsEditing(false)}
-          type="button"
-        >
-          Cancel
-        </button>
-      </div>
+        <div className="flex flex-wrap gap-3">
+          <Button disabled={isPending} tone="primary" type="submit">
+            Save changes
+          </Button>
+          <Button onClick={() => setIsEditing(false)} type="button">
+            Cancel
+          </Button>
+        </div>
+      </Panel>
     </form>
   );
 }
@@ -105,8 +96,8 @@ function Field({
   return (
     <label className="grid gap-2 text-sm font-medium text-[var(--foreground)]">
       {label}
-      <input
-        className="rounded-[1rem] border border-[var(--line)] bg-white/80 px-4 py-3 font-normal outline-none focus:border-[var(--accent)]"
+      <TextInput
+        className="font-normal"
         defaultValue={defaultValue}
         min={type === "number" ? 1 : undefined}
         max={type === "number" ? 180 : undefined}

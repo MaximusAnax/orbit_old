@@ -1,5 +1,6 @@
-import Link from "next/link";
+import { Orbit } from "lucide-react";
 import { CaptureExperience } from "@/components/landing/capture-experience";
+import { Badge, LinkButton, Panel } from "@/components/ui/primitives";
 import { APP_NAME } from "@/lib/constants";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -10,60 +11,61 @@ export default async function HomePage() {
   } = await supabase.auth.getUser();
 
   return (
-    <main className="ambient-grid min-h-screen pb-12 pt-6">
+    <main className="ambient-grid min-h-screen pb-10 pt-5">
       <div className="shell">
-        <header className="mb-8 flex items-center justify-between rounded-full border border-[var(--line)] bg-white/55 px-5 py-3 backdrop-blur">
-          <div>
-            <div className="section-title text-2xl">{APP_NAME}</div>
-            <p className="mt-1 text-sm text-[var(--muted)]">Relational memory that starts before the login wall.</p>
+        <header className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-[var(--radius)] bg-[var(--foreground)] text-white">
+              <Orbit aria-hidden="true" className="size-5" />
+            </div>
+            <div>
+              <div className="text-lg font-black tracking-normal">{APP_NAME}</div>
+              <p className="text-sm text-[var(--muted)]">Private relationship memory, ready before sign-in.</p>
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-sm">
+          <div className="flex items-center gap-2 text-sm">
             {user ? (
-              <Link className="rounded-full bg-[var(--accent)] px-4 py-2 text-white transition hover:opacity-90" href="/app">
+              <LinkButton href="/app" tone="primary">
                 Open dashboard
-              </Link>
+              </LinkButton>
             ) : (
-              <Link className="rounded-full border border-[var(--line)] px-4 py-2 transition hover:bg-white/70" href="/auth/login">
+              <LinkButton href="/auth/login">
                 Sign in with Google
-              </Link>
+              </LinkButton>
             )}
           </div>
         </header>
 
-        <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-          <div className="glass rounded-[2rem] p-8 lg:p-10">
-            <span className="inline-flex rounded-full bg-[var(--accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">
-              30-second first memory
-            </span>
-            <h1 className="section-title mt-6 max-w-3xl text-5xl leading-none md:text-6xl">
+        <section className="mb-5 grid gap-5 lg:grid-cols-[0.88fr_1.12fr]">
+          <Panel className="p-6 lg:p-7">
+            <Badge tone="accent">30-second first memory</Badge>
+            <h1 className="section-title mt-5 max-w-2xl text-4xl font-black leading-tight md:text-5xl">
               Turn the messy note in your head into someone you can actually remember.
             </h1>
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-[var(--muted)]">
-              Paste the rough version. Orbit extracts the person, the moment, the emotional signal, and the follow-up window before you even authenticate.
+            <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--muted-strong)]">
+              Paste the rough version. Orbit extracts the person, the moment, the emotional signal, and the next thoughtful step before the login wall.
             </p>
 
-            <div className="mt-8 rounded-[1.5rem] border border-[var(--line)] bg-white/70 p-5">
-              <p className="text-sm font-medium text-[var(--foreground)]">Try a brain dump</p>
+            <div className="mt-6 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
+              <p className="text-sm font-bold text-[var(--foreground)]">Try a brain dump</p>
               <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-                “Met Priya from Figma after the CMU alumni dinner. She leads product ops, wants intros to ML infra founders, and we really clicked on practical AI tools.”
+                &quot;Met Priya from Figma after the CMU alumni dinner. She leads product ops, wants intros to ML infra founders, and we clicked on practical AI tools.&quot;
               </p>
             </div>
 
-            <div className="mt-8 grid gap-4 text-sm text-[var(--muted)] md:grid-cols-3">
-              <div className="rounded-[1.5rem] border border-[var(--line)] bg-white/60 p-4">
-                <div className="font-semibold text-[var(--foreground)]">Capture first</div>
-                <p className="mt-2 leading-6">No contact forms. Just the note you already have.</p>
-              </div>
-              <div className="rounded-[1.5rem] border border-[var(--line)] bg-white/60 p-4">
-                <div className="font-semibold text-[var(--foreground)]">Private by default</div>
-                <p className="mt-2 leading-6">Your data stays tied to your account and RLS-backed rows.</p>
-              </div>
-              <div className="rounded-[1.5rem] border border-[var(--line)] bg-white/60 p-4">
-                <div className="font-semibold text-[var(--foreground)]">Search by meaning</div>
-                <p className="mt-2 leading-6">Find “that person from TartanHacks” even if you forgot the name.</p>
-              </div>
+            <div className="mt-6 grid gap-3 text-sm sm:grid-cols-3">
+              {[
+                ["Capture", "No contact form. Start with the note you already have."],
+                ["Trust", "Drafts stay local until you choose to save."],
+                ["Recall", "Search by context, event, topic, or half-remembered detail."],
+              ].map(([title, body]) => (
+                <div key={title} className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+                  <div className="font-bold text-[var(--foreground)]">{title}</div>
+                  <p className="mt-1 leading-5 text-[var(--muted)]">{body}</p>
+                </div>
+              ))}
             </div>
-          </div>
+          </Panel>
 
           <CaptureExperience isAuthenticated={Boolean(user)} />
         </section>

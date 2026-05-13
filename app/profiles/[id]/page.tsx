@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { UserRound } from "lucide-react";
 import { FollowUpActions } from "@/components/app/follow-up-actions";
 import { ProfileEditor } from "@/components/app/profile-editor";
 import { RelationshipActions } from "@/components/app/relationship-actions";
+import { Badge, IconBox, Panel } from "@/components/ui/primitives";
 import { getProfileById } from "@/lib/data";
 import { formatLongDate, formatRelativeDate } from "@/lib/utils";
 
@@ -22,31 +24,36 @@ export default async function ProfilePage({
   }
 
   return (
-    <main className="min-h-screen bg-transparent py-8">
+    <main className="min-h-screen bg-transparent py-6">
       <div className="shell">
-        <div className="mb-5 flex items-center justify-between">
-          <Link className="text-sm text-[var(--muted)] transition hover:text-[var(--foreground)]" href="/app">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-4">
+          <Link className="text-sm font-semibold text-[var(--muted-strong)] transition hover:text-[var(--foreground)]" href="/app">
             Back to dashboard
           </Link>
           {saved ? (
-            <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
-              Memory saved
-            </span>
+            <Badge tone="success">Memory saved</Badge>
           ) : null}
         </div>
 
-        <section className="glass rounded-[2rem] p-8">
+        <Panel className="p-5 lg:p-6">
           <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--accent)]">Relationship profile</p>
-              <h1 className="section-title mt-3 text-5xl">{profile.full_name}</h1>
+              <div className="flex items-center gap-3">
+                <IconBox>
+                  <UserRound aria-hidden="true" />
+                </IconBox>
+                <p className="eyebrow">Relationship profile</p>
+              </div>
+              <h1 className="section-title mt-3 text-4xl font-black">{profile.full_name}</h1>
               <p className="mt-3 text-lg text-[var(--muted)]">
                 {[profile.job_role, profile.current_org].filter(Boolean).join(" · ") || "Role and company inferred from your notes"}
               </p>
-              <ProfileEditor profile={profile} />
+              <div className="mt-5">
+                <ProfileEditor profile={profile} />
+              </div>
             </div>
 
-            <div className="grid gap-4 rounded-[1.5rem] border border-[var(--line)] bg-white/65 p-5 text-sm text-[var(--muted)] md:min-w-[280px]">
+            <div className="grid gap-4 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-raised)] p-5 text-sm text-[var(--muted)] md:min-w-[300px]">
               <div>
                 <div className="font-semibold text-[var(--foreground)]">Next follow-up</div>
                 <p className="mt-1">{formatRelativeDate(profile.next_follow_up_at)}</p>
@@ -64,37 +71,35 @@ export default async function ProfilePage({
               <FollowUpActions profileId={profile.id} />
             </div>
           </div>
-        </section>
+        </Panel>
 
         <RelationshipActions profileId={profile.id} />
 
-        <section className="mt-6">
+        <section className="mt-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="section-title text-3xl">Timeline</h2>
+            <h2 className="section-title text-2xl font-black">Timeline</h2>
             <span className="text-sm text-[var(--muted)]">{interactions.length} captured moments</span>
           </div>
 
           <div className="grid gap-4">
             {interactions.map((interaction) => (
-              <article key={interaction.id} className="glass rounded-[1.75rem] p-6">
+              <Panel key={interaction.id} className="p-5">
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">
-                    {interaction.sentiment}
-                  </span>
+                  <Badge tone={interaction.sentiment === "positive" ? "success" : "neutral"}>{interaction.sentiment}</Badge>
                   <span className="text-sm text-[var(--muted)]">{formatLongDate(interaction.interaction_date)}</span>
                 </div>
-                <p className="mt-4 text-lg leading-8 text-[var(--foreground)]">{interaction.structured_summary}</p>
+                <p className="mt-4 text-base leading-7 text-[var(--foreground)]">{interaction.structured_summary}</p>
                 <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-[var(--muted)]">{interaction.raw_content}</p>
                 {interaction.tags.length ? (
                   <div className="mt-4 flex flex-wrap gap-2">
                     {interaction.tags.map((tag) => (
-                      <span key={tag} className="rounded-full border border-[var(--line)] px-3 py-1 text-xs text-[var(--muted)]">
+                      <span key={tag} className="rounded-[var(--radius)] border border-[var(--line)] px-2.5 py-1 text-xs text-[var(--muted)]">
                         {tag}
                       </span>
                     ))}
                   </div>
                 ) : null}
-              </article>
+              </Panel>
             ))}
           </div>
         </section>

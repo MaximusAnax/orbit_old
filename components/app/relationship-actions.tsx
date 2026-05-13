@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { PenLine, RefreshCw } from "lucide-react";
+import { Button, Panel } from "@/components/ui/primitives";
 
 export function RelationshipActions({ profileId }: { profileId: string }) {
   const router = useRouter();
@@ -28,38 +30,43 @@ export function RelationshipActions({ profileId }: { profileId: string }) {
   }
 
   return (
-    <section className="mt-6 glass rounded-[1.75rem] p-6">
+    <Panel className="mt-5 p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">Action layer</p>
-          <h2 className="section-title mt-2 text-3xl">Next move</h2>
+          <p className="eyebrow">Action layer</p>
+          <h2 className="section-title mt-1 text-2xl font-black">Next move</h2>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">
+            Refresh context, then draft a specific follow-up that stays grounded in saved memories.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            className="rounded-full border border-[var(--line)] bg-white/70 px-4 py-2 text-sm font-semibold transition hover:bg-white disabled:opacity-50"
+          <Button
             disabled={isPending}
             onClick={() => void post("enrich")}
             type="button"
           >
+            <RefreshCw aria-hidden="true" className="size-4" />
             Refresh context
-          </button>
-          <button
-            className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+          </Button>
+          <Button
+            tone="primary"
             disabled={isPending}
             onClick={() => void post("outreach-draft")}
             type="button"
           >
+            <PenLine aria-hidden="true" className="size-4" />
             Draft follow-up
-          </button>
+          </Button>
         </div>
       </div>
 
       {draft ? (
-        <div className="mt-5 rounded-[1.25rem] border border-[var(--line)] bg-white/75 p-4">
+        <div className="mt-5 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
+          <p className="text-sm font-bold text-[var(--foreground)]">Draft</p>
           <p className="whitespace-pre-wrap text-sm leading-7 text-[var(--foreground)]">{draft}</p>
         </div>
       ) : null}
       {error ? <p className="mt-3 text-sm text-[#a54634]">{error}</p> : null}
-    </section>
+    </Panel>
   );
 }

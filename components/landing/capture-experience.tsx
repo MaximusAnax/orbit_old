@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ContactRound, Mic, Plus } from "lucide-react";
 import { motion } from "motion/react";
 import { LOCAL_STORAGE_KEYS } from "@/lib/constants";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@/lib/orbit/preview";
 import { parseSseBuffer } from "@/lib/orbit/sse";
 import { PreviewCard } from "@/components/landing/preview-card";
+import { Badge, Button, IconBox, Panel, TextArea } from "@/components/ui/primitives";
 import type { ExtractionResult } from "@/lib/validators";
 
 interface PendingCommitPayload {
@@ -299,24 +301,24 @@ export function CaptureExperience({ isAuthenticated }: { isAuthenticated: boolea
 
   return (
     <motion.section
-      className="grid gap-6"
+      className="grid gap-5"
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45 }}
     >
-      <div className="glass rounded-[2rem] p-6 lg:p-8">
-        <div className="mb-4 flex items-center justify-between">
+      <Panel className="p-5 lg:p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">Capture before auth</p>
-            <h2 className="section-title mt-2 text-3xl">Paste the rough note.</h2>
+            <p className="eyebrow">Capture before auth</p>
+            <h2 className="section-title mt-1 text-2xl font-black">Paste the rough note.</h2>
           </div>
-          <div className="rounded-full border border-[var(--line)] px-3 py-1 text-xs text-[var(--muted)]">
+          <Badge>
             {isProcessingUpload ? "Processing upload..." : isExtracting ? "Streaming extract..." : "Private preview"}
-          </div>
+          </Badge>
         </div>
 
-        <textarea
-          className="min-h-[220px] w-full rounded-[1.75rem] border border-[var(--line)] bg-white/78 px-5 py-4 text-base leading-7 text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]"
+        <TextArea
+          className="min-h-[220px] resize-y text-base leading-7"
           placeholder="Met Alex from Figma after the hackathon dinner..."
           value={rawText}
           onChange={(event) => setRawText(event.target.value)}
@@ -326,19 +328,26 @@ export function CaptureExperience({ isAuthenticated }: { isAuthenticated: boolea
           <p className="max-w-xl text-sm leading-6 text-[var(--muted)]">
             Orbit stores the draft in your browser until you decide to save it. Sign-in only happens when you want the memory committed to your account.
           </p>
-          <button
-            className="inline-flex items-center justify-center rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          <Button
+            tone="primary"
+            className="md:min-w-[168px]"
             disabled={!canSave}
             onClick={() => {
               void handleSave();
             }}
           >
+            <IconBox>
+              <Plus aria-hidden="true" />
+            </IconBox>
             Save to my memory
-          </button>
+          </Button>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3">
-          <label className="inline-flex cursor-pointer items-center justify-center rounded-full border border-[var(--line)] bg-white/65 px-4 py-2 text-sm font-semibold transition hover:bg-white">
+          <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-raised)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--line-strong)]">
+            <IconBox>
+              <Mic aria-hidden="true" />
+            </IconBox>
             Voice note
             <input
               accept="audio/mpeg,audio/mp4,audio/wav,audio/webm,audio/x-m4a"
@@ -351,7 +360,10 @@ export function CaptureExperience({ isAuthenticated }: { isAuthenticated: boolea
               type="file"
             />
           </label>
-          <label className="inline-flex cursor-pointer items-center justify-center rounded-full border border-[var(--line)] bg-white/65 px-4 py-2 text-sm font-semibold transition hover:bg-white">
+          <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-raised)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--line-strong)]">
+            <IconBox>
+              <ContactRound aria-hidden="true" />
+            </IconBox>
             Business card
             <input
               accept="image/jpeg,image/png,image/webp"
@@ -367,7 +379,7 @@ export function CaptureExperience({ isAuthenticated }: { isAuthenticated: boolea
         </div>
 
         {error ? <p className="mt-4 text-sm text-[#a54634]">{error}</p> : null}
-      </div>
+      </Panel>
 
       <PreviewCard extraction={extraction} preview={preview} isExtracting={isExtracting} />
     </motion.section>
