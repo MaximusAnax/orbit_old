@@ -9,7 +9,7 @@ const requiredEnv = [
   "NEXT_PUBLIC_APP_URL",
 ];
 
-const expectedAppUrl = "https://orbit.abdoulndiongue.com";
+const expectedAppUrl = "https://orbit-six-blond.vercel.app";
 const missingEnv = requiredEnv.filter((name) => !process.env[name]);
 const migrationsDir = join(process.cwd(), "supabase", "migrations");
 const migrations = existsSync(migrationsDir)
