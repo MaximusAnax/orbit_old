@@ -428,3 +428,197 @@ class TestWeatherData:
         )
         assert dist.prob_at_or_above(78.0) == 1.0
         assert dist.prob_at_or_above(85.0) < 0.05
+
+
+class TestCertaintyCurve:
+    """The experiment that settles whether the weather edge exists.
+
+    Built from synthetic days with a known shape so the measurement itself can
+    be verified before it is pointed at real data.
+    """
+
+    def _day(self, date_str: str, hourly: list[float], offset_h: float = 0.0):
+        from datetime import datetime as dt
+
+        from orbit.data.weather import Observation
+
+        base = dt.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
+        return [
+            Observation(base + timedelta(hours=h - offset_h), t, "KTEST")
+            for h, t in enumerate(hourly)
+        ]
+
+    def _typical_day(self, peak_hour: int = 15, peak: float = 80.0):
+        """A normal diurnal curve peaking mid-afternoon."""
+        return [
+            peak - abs(h - peak_hour) * 1.5 for h in range(24)
+        ]
+
+    def test_detects_that_the_max_locks_in_mid_afternoon(self):
+        from orbit.strategies.weather_study import build_certainty_curve
+
+        obs = []
+        for d in range(1, 29):
+            obs += self._day(f"2026-06-{d:02d}", self._typical_day(peak_hour=15))
+        curve = build_certainty_curve(obs, timezone_offset_h=0, station_id="KTEST")
+
+        assert curve.days_analysed == 28
+        # Before the peak nothing is settled; after it, everything is.
+        assert curve.settled_fraction_at(10) == 0.0
+        assert curve.settled_fraction_at(15) == 1.0
+        assert curve.settled_fraction_at(18) == 1.0
+        assert curve.first_hour_above(0.8) == 15
+
+    def test_a_late_peaking_station_settles_late(self):
+        """The result that would kill the strategy, and must be detectable."""
+        from orbit.strategies.weather_study import build_certainty_curve
+
+        obs = []
+        for d in range(1, 29):
+            obs += self._day(f"2026-06-{d:02d}", self._typical_day(peak_hour=23))
+        curve = build_certainty_curve(obs, timezone_offset_h=0)
+        assert curve.settled_fraction_at(15) == 0.0
+        assert curve.first_hour_above(0.5) == 23
+
+    def test_sparse_days_are_excluded_not_counted_as_settled(self):
+        """A station that stops reporting must not look like an early peak.
+
+        Otherwise the study manufactures exactly the result it is testing for.
+        """
+        from orbit.strategies.weather_study import build_certainty_curve
+
+        obs = self._day("2026-06-01", self._typical_day())          # full day
+        obs += self._day("2026-06-02", [70.0, 71.0, 72.0])           # 3 readings
+        curve = build_certainty_curve(
+            obs, timezone_offset_h=0, min_observations_per_day=12
+        )
+        assert curve.days_analysed == 1
+
+    def test_remaining_rise_shrinks_through_the_day(self):
+        from orbit.strategies.weather_study import build_certainty_curve
+
+        obs = []
+        for d in range(1, 15):
+            obs += self._day(f"2026-06-{d:02d}", self._typical_day(peak_hour=15))
+        curve = build_certainty_curve(obs, timezone_offset_h=0)
+        gaps = {h.local_hour: h.mean_remaining_rise for h in curve.hours}
+        assert gaps[6] > gaps[12] > gaps[15]
+        assert gaps[15] == pytest.approx(0.0, abs=1e-9)
+
+    def test_timezone_offset_shifts_the_curve(self):
+        from orbit.strategies.weather_study import build_certainty_curve
+
+        obs = []
+        for d in range(1, 15):
+            obs += self._day(f"2026-06-{d:02d}", self._typical_day(peak_hour=15))
+        utc = build_certainty_curve(obs, timezone_offset_h=0)
+        west = build_certainty_curve(obs, timezone_offset_h=-5)
+        assert utc.first_hour_above(0.8) != west.first_hour_above(0.8)
+
+    def test_summary_and_table_render(self):
+        import json
+
+        from orbit.strategies.weather_study import build_certainty_curve
+
+        obs = []
+        for d in range(1, 15):
+            obs += self._day(f"2026-06-{d:02d}", self._typical_day())
+        curve = build_certainty_curve(obs, timezone_offset_h=0, station_id="KTEST")
+        json.dumps(curve.summary())
+        assert "settled" in curve.format_table()
+
+    def test_empty_input_is_safe(self):
+        from orbit.strategies.weather_study import build_certainty_curve
+
+        curve = build_certainty_curve([], timezone_offset_h=0)
+        assert curve.days_analysed == 0
+        assert curve.first_hour_above(0.5) is None
+
+
+class TestSettledThresholdCount:
+    def _obs(self, hourly):
+        from datetime import datetime as dt
+
+        from orbit.data.weather import Observation
+
+        base = dt(2026, 6, 1, tzinfo=UTC)
+        return [
+            Observation(base + timedelta(hours=h), t, "KTEST")
+            for h, t in enumerate(hourly)
+        ]
+
+    def test_counts_thresholds_already_passed(self):
+        from orbit.strategies.weather_study import count_settled_thresholds
+
+        # Peaks at 80F by hour 15.
+        hourly = [80.0 - abs(h - 15) * 1.5 for h in range(24)]
+        result = count_settled_thresholds(
+            self._obs(hourly),
+            timezone_offset_h=0,
+            thresholds=[70, 75, 78, 82, 90],
+            at_local_hour=15,
+            plausible_remaining_rise=3.0,
+        )
+        # 70, 75, 78 are at or below the 80F running max -> settled YES.
+        assert result.mean_settled_yes_thresholds == 3.0
+        # 90 is above 80 + 3 -> settled NO. 82 is still live.
+        assert result.mean_settled_no_thresholds == 1.0
+        assert result.mean_total == 4.0
+
+    def test_early_in_the_day_almost_nothing_is_settled(self):
+        from orbit.strategies.weather_study import count_settled_thresholds
+
+        hourly = [80.0 - abs(h - 15) * 1.5 for h in range(24)]
+        result = count_settled_thresholds(
+            self._obs(hourly),
+            timezone_offset_h=0,
+            thresholds=[70, 75, 78, 82],
+            at_local_hour=5,
+            plausible_remaining_rise=20.0,
+        )
+        assert result.mean_settled_no_thresholds == 0.0
+
+    def test_a_generous_rise_allowance_claims_less_certainty(self):
+        """Being conservative must reduce claimed edge, never increase it."""
+        from orbit.strategies.weather_study import count_settled_thresholds
+
+        hourly = [80.0 - abs(h - 15) * 1.5 for h in range(24)]
+        args = {
+            "timezone_offset_h": 0,
+            "thresholds": [82, 85, 90],
+            "at_local_hour": 15,
+        }
+        tight = count_settled_thresholds(
+            self._obs(hourly), **args, plausible_remaining_rise=1.0
+        )
+        loose = count_settled_thresholds(
+            self._obs(hourly), **args, plausible_remaining_rise=15.0
+        )
+        assert loose.mean_settled_no_thresholds < tight.mean_settled_no_thresholds
+
+
+class TestDollarEstimate:
+    def test_sensitivity_to_capture_rate_is_linear_and_brutal(self):
+        from orbit.strategies.weather_study import estimate_monthly_dollars
+
+        base = {
+            "settled_contracts_per_day": 4.0,
+            "stations": 7,
+            "edge_cents": 2.0,
+            "contracts_per_trade": 50,
+        }
+        optimistic = estimate_monthly_dollars(**base, capture_rate=0.5)
+        realistic = estimate_monthly_dollars(**base, capture_rate=0.05)
+        assert optimistic["gross_dollars_per_month"] == pytest.approx(
+            realistic["gross_dollars_per_month"] * 10
+        )
+
+    def test_assumptions_are_reported_alongside_the_number(self):
+        from orbit.strategies.weather_study import estimate_monthly_dollars
+
+        out = estimate_monthly_dollars(
+            settled_contracts_per_day=4.0, stations=7, capture_rate=0.1,
+            edge_cents=2.0, contracts_per_trade=50,
+        )
+        assert out["assumed_capture_rate"] == 0.1
+        assert out["assumed_edge_cents"] == 2.0

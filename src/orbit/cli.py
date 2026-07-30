@@ -305,6 +305,74 @@ async def _serve_api(
     await uvicorn.Server(config).serve()
 
 
+async def cmd_weather_study(settings: Settings, args: argparse.Namespace) -> int:
+    """Measure how early the daily maximum locks in, from history alone.
+
+    The only experiment here that needs no recorded prices: station
+    observations go back decades, so the central claim of the weather strategy
+    can be tested before any capital or waiting is committed.
+    """
+    from datetime import timedelta
+
+    from orbit.data.weather import KNOWN_STATIONS, fetch_asos_history
+    from orbit.strategies.weather_study import (
+        build_certainty_curve,
+        count_settled_thresholds,
+    )
+
+    stations = [s for s in KNOWN_STATIONS if not args.station or s.station_id == args.station]
+    if not stations:
+        print(f"Unknown station {args.station}. Known: "
+              f"{', '.join(s.station_id for s in KNOWN_STATIONS)}", file=sys.stderr)
+        return 1
+
+    end = datetime.now(UTC)
+    start = end - timedelta(days=args.days)
+    for station in stations:
+        print(f"\nFetching {station.station_id} ({station.name}), {args.days} days...")
+        try:
+            obs = await fetch_asos_history(station.station_id, start, end)
+        except Exception as exc:
+            print(f"  failed: {exc}", file=sys.stderr)
+            continue
+        if not obs:
+            print("  no observations returned", file=sys.stderr)
+            continue
+
+        curve = build_certainty_curve(
+            obs,
+            timezone_offset_h=station.timezone_offset_h,
+            station_id=station.station_id,
+        )
+        print()
+        print(curve.format_table())
+
+        hour = curve.first_hour_above(0.5)
+        if hour is not None:
+            p90 = next(
+                (h.p90_remaining_rise for h in curve.hours if h.local_hour == hour), 6.0
+            )
+            counts = count_settled_thresholds(
+                obs,
+                timezone_offset_h=station.timezone_offset_h,
+                thresholds=[float(t) for t in range(20, 111, 2)],
+                at_local_hour=hour,
+                plausible_remaining_rise=p90,
+            )
+            print(
+                f"\nAt {hour}:00 local, on an average day "
+                f"{counts.mean_settled_yes_thresholds:.1f} thresholds are already "
+                f"settled YES and {counts.mean_settled_no_thresholds:.1f} settled NO "
+                f"(2F grid, p90 rise allowance {p90:.1f}F)."
+            )
+        print(
+            "\nThis measures CERTAINTY, not profit. Whether these settled "
+            "contracts are still mispriced when the bot sees them requires "
+            "recorded market data - run `orbit record` to find out."
+        )
+    return 0
+
+
 async def cmd_status(settings: Settings, args: argparse.Namespace) -> int:
     """Query a running instance."""
     import httpx
@@ -358,6 +426,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("live", help="run the loop with REAL MONEY")
     p.set_defaults(func=cmd_trade, is_async=True, mode="live")
+
+    p = sub.add_parser(
+        "weather-study",
+        help="measure how early daily highs lock in (needs no recorded prices)",
+    )
+    p.add_argument("--days", type=int, default=365)
+    p.add_argument("--station", default="", help="e.g. KNYC; omit for all")
+    p.set_defaults(func=cmd_weather_study, is_async=True)
 
     p = sub.add_parser("status", help="query a running instance")
     p.set_defaults(func=cmd_status, is_async=True)
