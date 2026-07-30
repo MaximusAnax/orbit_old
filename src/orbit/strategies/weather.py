@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from orbit.core.fees import KalshiFees, Liquidity
 from orbit.core.money import PIPS_PER_DOLLAR
 from orbit.core.types import FairValue, OrderBook, Side
 
@@ -263,14 +264,42 @@ class WeatherEdgeStrategy:
 
     skill: ForecastSkill = field(default_factory=ForecastSkill)
     rounding: SettlementRounding = SettlementRounding.NEAREST_INTEGER
-    #: Minimum edge in pips before an opinion is actionable. Set well above
-    #: the fee at the prices being traded, or the model will trade itself
-    #: broke on noise.
-    min_edge_pips: int = 200  # 2 cents
+    #: Multiple of the fee that the edge must clear. The *threshold itself is
+    #: price-dependent*, which is the single most important design decision in
+    #: this class.
+    #:
+    #: Kalshi's fee is parabolic in price, so the break-even forecasting edge
+    #: is 1.75 percentage points at 50c but only 0.20pp at 97c — the same
+    #: skill is worth roughly nine times more in the wings than at mid-book.
+    #: A flat cents threshold inverts this: it waves through mid-book trades
+    #: that need a huge edge to break even, and rejects wing trades that need
+    #: almost none. Deriving the hurdle from the fee at the actual price
+    #: points the strategy where the hurdle is lowest, automatically.
+    edge_safety_multiple: float = 2.0
+    #: Absolute floor regardless of price, so a near-zero fee at 99c cannot
+    #: justify trading on model noise.
+    min_edge_floor_pips: int = 20  # 0.2 cents
     #: Shrink applied to every estimate until the model has been validated
     #: against realised outcomes. Starting below 1.0 is deliberate: a new
     #: model's first job is to be measured, not to be trusted.
     haircut: float = 0.5
+    #: Fee model used to derive the price-dependent hurdle.
+    fees: KalshiFees = field(default_factory=KalshiFees)
+
+    def required_edge_pips(self, price_pips: int, *, size: int = 100) -> int:
+        """Minimum edge worth acting on at this price.
+
+        Falls steeply toward the wings because the fee does, which is what
+        makes deep-in-the-money weather contracts the right place to trade a
+        small forecasting edge and mid-book contracts the wrong one.
+        """
+        fee_per_contract = self.fees.trade_fee_pips(
+            price_pips=price_pips, size=size, liquidity=Liquidity.TAKER
+        ) / max(1, size)
+        return max(
+            self.min_edge_floor_pips,
+            int(fee_per_contract * self.edge_safety_multiple),
+        )
 
     def fair_value(
         self,
@@ -329,13 +358,16 @@ class WeatherEdgeStrategy:
         )
         ask, bid = book.best_ask_pips, book.best_bid_pips
 
+        # The hurdle is evaluated at the price actually being traded, not as a
+        # flat constant, so the same model edge qualifies in the wings and is
+        # correctly rejected at mid-book.
         if ask is not None:
             edge = fv.edge_pips(ask, side=Side.BUY)
-            if edge >= self.min_edge_pips:
+            if edge >= self.required_edge_pips(ask):
                 return fv, Side.BUY, edge
         if bid is not None:
             edge = fv.edge_pips(bid, side=Side.SELL)
-            if edge >= self.min_edge_pips:
+            if edge >= self.required_edge_pips(bid):
                 return fv, Side.SELL, edge
         return None
 

@@ -201,7 +201,7 @@ class TestBuckets:
 class TestStrategy:
     @pytest.fixture
     def strategy(self):
-        return WeatherEdgeStrategy(min_edge_pips=200, haircut=0.5)
+        return WeatherEdgeStrategy(haircut=0.5)
 
     def test_finds_the_settled_market_edge(self, strategy):
         """The trade the whole module exists for.
@@ -278,7 +278,7 @@ class TestStrategy:
         assert fv.confidence < 1.0
 
     def test_small_edges_are_ignored(self):
-        strategy = WeatherEdgeStrategy(min_edge_pips=500)
+        strategy = WeatherEdgeStrategy(edge_safety_multiple=50.0)
         market = WeatherMarket(
             market_key="kalshi:X", station="KNYC", threshold=75.0,
             close_time=TS + timedelta(hours=3),
@@ -622,3 +622,91 @@ class TestDollarEstimate:
         )
         assert out["assumed_capture_rate"] == 0.1
         assert out["assumed_edge_cents"] == 2.0
+
+
+class TestFeeAwareThreshold:
+    """The hurdle must fall toward the wings, because the fee does.
+
+    Kalshi's fee is parabolic in price, so the break-even forecasting edge is
+    1.75pp at 50c and 0.20pp at 97c - the same skill is worth roughly nine
+    times more in the wings. A flat cents threshold inverts that: it admits
+    mid-book trades needing a huge edge and rejects wing trades needing almost
+    none.
+    """
+
+    def test_hurdle_falls_steeply_toward_the_wings(self):
+        s = WeatherEdgeStrategy()
+        hurdles = [s.required_edge_pips(c(p)) for p in (50, 70, 80, 90, 95, 99)]
+        assert hurdles == sorted(hurdles, reverse=True)
+        assert hurdles[0] > hurdles[-1] * 10
+
+    def test_mid_book_hurdle_reflects_the_full_fee(self):
+        s = WeatherEdgeStrategy(edge_safety_multiple=2.0)
+        # ~1.75c fee at 50c, doubled.
+        assert s.required_edge_pips(c(50)) == pytest.approx(350, abs=10)
+
+    def test_a_floor_prevents_trading_on_noise_at_99c(self):
+        """A near-zero fee must not justify acting on model noise."""
+        s = WeatherEdgeStrategy(min_edge_floor_pips=20)
+        assert s.required_edge_pips(c(99)) >= 20
+
+    def test_a_one_cent_edge_qualifies_in_the_wings_and_not_at_mid_book(self):
+        """The behaviour the whole design exists for.
+
+        Both cases below are a genuine ~1-cent forecast edge over the ask. At
+        mid-book the 1.75c fee makes it a loser and it is correctly declined;
+        at 97c the fee is 0.20c and the same edge is worth taking.
+        """
+        s = WeatherEdgeStrategy(haircut=1.0)
+        mkt = lambda k: WeatherMarket(  # noqa: E731
+            market_key=k, station="KNYC", threshold=75.0,
+            close_time=TS + timedelta(hours=2),
+        )
+
+        # Forecast just above the 74.5 rounding cutoff -> fair value ~51c.
+        mid_fv = s.fair_value(
+            mkt("kalshi:MID"), observations=[], remaining_forecast=74.53, now=TS
+        )
+        assert 0.50 < mid_fv.probability < 0.53
+        assert s.evaluate(
+            mkt("kalshi:MID"), book("kalshi:MID", 49, 50),
+            observations=[], remaining_forecast=74.53, now=TS,
+        ) is None, "a 1c edge does not cover a 1.75c fee"
+
+        # Forecast well clear of the cutoff -> fair value ~98c.
+        wing_fv = s.fair_value(
+            mkt("kalshi:WING"), observations=[], remaining_forecast=76.71, now=TS
+        )
+        assert 0.97 < wing_fv.probability < 0.99
+        result = s.evaluate(
+            mkt("kalshi:WING"), book("kalshi:WING", 96, 97),
+            observations=[], remaining_forecast=76.71, now=TS,
+        )
+        assert result is not None, "the same 1c edge clears a 0.20c fee"
+        assert result[1] is Side.BUY
+
+
+class TestStationSettlementConfig:
+    """Settlement config errors silently price the wrong thing."""
+
+    def test_offsets_are_local_standard_time_not_daylight(self):
+        """The NWS CLI climate day runs midnight-to-midnight LST year-round.
+
+        Using a daylight offset shifts the settlement window by an hour and
+        can attribute a warm overnight surge to the wrong contract.
+        """
+        from orbit.data.weather import KNOWN_STATIONS
+
+        by_id = {s.station_id: s for s in KNOWN_STATIONS}
+        assert by_id["KNYC"].timezone_offset_h == -5   # EST, not EDT
+        assert by_id["KMDW"].timezone_offset_h == -6   # CST, not CDT
+        assert by_id["KLAX"].timezone_offset_h == -8   # PST, not PDT
+
+    def test_counterintuitive_stations_are_the_documented_ones(self):
+        """Chicago settles on Midway, Houston on Hobby, NYC on Central Park."""
+        from orbit.data.weather import KNOWN_STATIONS
+
+        ids = {s.station_id for s in KNOWN_STATIONS}
+        assert "KMDW" in ids and "KORD" not in ids   # Midway, not O'Hare
+        assert "KHOU" in ids and "KIAH" not in ids   # Hobby, not Bush
+        assert "KNYC" in ids                          # Central Park

@@ -21,7 +21,42 @@ throughout. Where a number could not be verified it says so.
 
 For scale: Renaissance Medallion, the best-documented sustained return in
 finance, did roughly 39% *per year* net over three decades — and closed to
-outside money because the strategy could not absorb more capital.
+outside money because the strategy could not absorb more capital. On $5,000
+that rate is **$139/month**.
+
+### The withdrawal arithmetic — the part that actually decides this
+
+The framing above is still too generous, because you do not want 20%/month of
+*compounding*. You want $1,000 **taken out**, every month. That is a different
+and much harder problem: the account never builds a buffer, and every drawdown
+lands at full size.
+
+**Months until a $5,000 account is exhausted while withdrawing $1,000/month:**
+
+| Sustained monthly return | Account exhausted after |
+|---|---|
+| 0% | 5 months |
+| **5%/month** (world-class for this asset class) | **6 months** |
+| **10%/month** (extraordinary) | **7 months** |
+| 15%/month | 10 months |
+| 20%/month | never — but flat at $5,000 forever, zero buffer, one bad month is fatal |
+| 25%/month | grows |
+
+Read the 5% row again. At a genuinely excellent, *sustained* 5%/month —
+better than almost anyone in this asset class achieves — withdrawing
+$1,000/month empties the account in six months. Not probably. Arithmetically,
+before variance is considered at all.
+
+Add realistic variance and it gets worse: **P(ruin within 12 months) is ~93.7%
+at a genuine 2pp edge sized to hit the target, and ~99.2% at a genuine 3pp edge
+with textbook half-Kelly sizing.** Correct risk management does not rescue
+this — it makes the failure arrive faster and more reliably, because a
+correctly-sized 3pp edge on $5,000 generates $30–100/month and you are removing
+$1,000.
+
+**The honest reframe: $1,000 in a good month is achievable. $1,000 every month,
+withdrawn, from $5,000, is not — and attempting it is itself the thing that
+destroys the account.**
 
 The sharpest way to see the size of the ask: **a trader compounding 20%/month
 for three years from $5,000 would end with more lifetime profit than Domer —
@@ -187,14 +222,71 @@ that constraint arbitrage plausibly supports:
 
 | Capital | Realistic monthly |
 |---|---|
-| $5,000 | $50–200 |
-| $25,000 | $250–1,000 |
+| $5,000 | $50–100 unconditional; $150–400 if the edge is real |
+| $30,000 | $1,200–2,700 if the edge is real |
 | $100,000 | $1,000–4,000 |
+
+The research's composite estimate for a competent new entrant on $5,000:
+**$50–$100/month unconditionally, with a 35–50% chance the year ends
+negative**; $150–$400/month conditional on the edges being real and sizing
+being disciplined.
 
 **$1,000/month is roughly a $50,000–$100,000 problem, not a strategy problem.**
 The system already built scales to that without modification — Kalshi's
 position-accountability cap is $25,000 per strike, well above what a $5k
 account can use.
+
+### The fee curve is the real edge, and it reorders everything
+
+The most actionable single fact in the research. Kalshi's fee is parabolic in
+price, so the **break-even forecasting edge** — how much you must out-predict
+the market by before earning a cent — varies enormously:
+
+| Price | Fee/contract | Break-even edge |
+|---|---|---|
+| 50c | 1.75c | **1.75 pp** |
+| 80c | 1.12c | 1.12 pp |
+| 90c | 0.63c | 0.63 pp |
+| 95c | 0.33c | 0.33 pp |
+| **97c** | **0.20c** | **0.20 pp** |
+| 99c | 0.07c | 0.07 pp |
+
+**The same forecasting skill is worth about nine times more at 97c than at
+50c.** At mid-book you must beat a market that already aggregates public
+forecasts by 1.75 percentage points; at 97c, by 0.20. As a maker, divide by
+four again.
+
+`WeatherEdgeStrategy` derives its trade threshold from the fee at the actual
+price rather than using a flat cents figure, so it automatically hunts where
+the hurdle is lowest. A flat threshold does the opposite: it admits mid-book
+trades needing a huge edge and rejects wing trades needing almost none.
+
+### The one documented live record
+
+The best publicly documented Kalshi weather trading record: **1,038 settled
+trades, real money, Feb–Jul 2026, netting +$1,817 after fees — about
+$415/month** on only ~$102/day of deployed capital.
+
+The honest reading of that record matters as much as the headline. Monthly
+path: Feb +$116, Mar +$7, Apr −$377, May +$56, **Jun +$986, Jul +$1,030**.
+Feb–May was cumulatively **−$198 across 816 trades**. Over 100% of lifetime
+profit arrived in the final two months, after a model change, during summer —
+when temperature distributions are tightest and most predictable.
+
+Correcting the significance test for spatial correlation (same-day forecast
+errors cluster at ~1,000km synoptic scale, so ~1,038 trades is really ~130–200
+independent observations) gives **t ≈ 1.5–2.1, p ≈ 0.04–0.13. Suggestive, not
+established.** A pure seasonality explanation for the whole record is still
+alive and only a 12-month sample spanning a shoulder season can rule it out.
+
+### A warning about the intraday trade specifically
+
+Interactive Brokers measured a comparable prediction market against NWS LAMP
+guidance across 23 cities: **the market beat LAMP in 20 of 23, median +17.2%,
+with its advantage widening to ~40% in the hours before the daily high.** The
+market is sharpest exactly when the intraday lock-in trade fires. That does not
+kill the idea — settled is settled — but it means the mispricing must come from
+the venue lagging *observations*, not from out-forecasting the market.
 
 ### More edge — the only one that compounds skill
 
