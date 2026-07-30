@@ -68,7 +68,7 @@ def dollars_to_pips(dollars: float) -> int:
 
     Used to ingest venue payloads that quote decimal dollars (Polymarket).
     """
-    return int(round(dollars * PIPS_PER_DOLLAR))
+    return round(dollars * PIPS_PER_DOLLAR)
 
 
 def pips_to_dollars(pips: int) -> float:

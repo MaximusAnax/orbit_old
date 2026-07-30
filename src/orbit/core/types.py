@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Self
 
 from orbit.core.money import (
@@ -29,12 +29,12 @@ from orbit.core.money import (
 )
 
 
-class Venue(str, Enum):
+class Venue(StrEnum):
     KALSHI = "kalshi"
     POLYMARKET = "polymarket"
 
 
-class Side(str, Enum):
+class Side(StrEnum):
     """Direction in YES-space."""
 
     BUY = "buy"
@@ -50,19 +50,19 @@ class Side(str, Enum):
         return 1 if self is Side.BUY else -1
 
 
-class Outcome(str, Enum):
+class Outcome(StrEnum):
     """Which leg of a binary market a venue quote refers to."""
 
     YES = "yes"
     NO = "no"
 
 
-class OrderType(str, Enum):
+class OrderType(StrEnum):
     LIMIT = "limit"
     MARKET = "market"
 
 
-class TimeInForce(str, Enum):
+class TimeInForce(StrEnum):
     GTC = "gtc"
     IOC = "ioc"
     FOK = "fok"
@@ -71,7 +71,7 @@ class TimeInForce(str, Enum):
     POST_ONLY = "post_only"
 
 
-class OrderStatus(str, Enum):
+class OrderStatus(StrEnum):
     PENDING = "pending"  # created locally, not yet acknowledged
     OPEN = "open"
     PARTIALLY_FILLED = "partially_filled"
@@ -100,7 +100,7 @@ _TERMINAL_STATUSES = frozenset(
 )
 
 
-class MarketStatus(str, Enum):
+class MarketStatus(StrEnum):
     ACTIVE = "active"
     PAUSED = "paused"
     CLOSED = "closed"  # trading halted, awaiting resolution
@@ -583,7 +583,7 @@ class FairValue:
 
     @property
     def price_pips(self) -> int:
-        return int(round(self.probability * PIPS_PER_DOLLAR))
+        return round(self.probability * PIPS_PER_DOLLAR)
 
     def edge_pips(self, market_pips: int, *, side: Side) -> int:
         """Gross edge in pips, before fees, for trading ``side`` here."""

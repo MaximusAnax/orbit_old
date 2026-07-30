@@ -18,13 +18,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from enum import Enum
+from enum import StrEnum
 from typing import Protocol
 
 from orbit.core.money import PIPS_PER_CENT, PIPS_PER_DOLLAR
 
 
-class Liquidity(str, Enum):
+class Liquidity(StrEnum):
     """Whether an execution added or removed liquidity.
 
     This distinction is worth real money: on Kalshi the general fee schedule
@@ -130,7 +130,7 @@ class KalshiFees:
         We scale ``rate`` by 10**6 to an integer to keep the whole computation
         in exact integer arithmetic before taking the ceiling.
         """
-        rate_scaled = int(round(rate * 1_000_000))
+        rate_scaled = round(rate * 1_000_000)
         numerator = rate_scaled * size * price_pips * (PIPS_PER_DOLLAR - price_pips)
         denominator = 1_000_000 * PIPS_PER_DOLLAR * 100  # -> cents
         fee_cents = -(-numerator // denominator)  # ceiling division
