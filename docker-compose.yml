@@ -1,0 +1,29 @@
+services:
+  # The recorder runs continuously and independently of trading. It is the
+  # component to deploy first: the tick archive can only be built forward in
+  # time, and it can never place an order.
+  recorder:
+    build: .
+    command: ["orbit", "record"]
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./secrets:/app/secrets:ro
+    restart: unless-stopped
+
+  # The trading loop plus dashboard. Defaults to paper; going live requires the
+  # three switches in .env.
+  trader:
+    build: .
+    command: ["orbit", "paper"]
+    env_file: .env
+    environment:
+      ORBIT_API_HOST: 0.0.0.0
+    volumes:
+      - ./data:/app/data
+      - ./secrets:/app/secrets:ro
+    ports:
+      - "127.0.0.1:8080:8080"   # localhost only; front with TLS to expose
+    restart: unless-stopped
+    depends_on:
+      - recorder

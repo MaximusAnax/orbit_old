@@ -125,14 +125,36 @@ def create_app() -> FastAPI:
 
     @app.get("/api/opportunities", dependencies=[Depends(_auth)])
     def get_opportunities() -> dict[str, Any]:
-        """Currently detected violations, whether or not they were traded.
+        """Violations visible right now, whether or not they were traded.
 
-        Useful on day one: it shows whether the strategy is finding anything
-        at all, long before there is a PnL curve to look at.
+        Scans fresh rather than serving the last loop's cache: the question
+        this endpoint answers is "what does the strategy see at this instant",
+        and a stale answer to that is worse than none. The scan is read-only
+        and never places an order.
+
+        Useful on day one, before there is any PnL curve to look at: it shows
+        whether the strategy is finding anything at all.
         """
         if state.runner is None:
             return {"opportunities": []}
-        return {"opportunities": state.runner.status()["recent_opportunities"]}
+        runner = state.runner
+        return {
+            "opportunities": [
+                {
+                    "constraint": o.constraint_name,
+                    "profit_usd": o.worst_case_profit_pips / 10_000,
+                    "capital_usd": o.capital_pips / 10_000,
+                    "return_on_capital": (
+                        None if o.return_on_capital == float("inf")
+                        else o.return_on_capital
+                    ),
+                    "legs": len(o.legs),
+                    "execution_risk": o.execution_risk,
+                    "rationale": o.rationale,
+                }
+                for o in runner.scanner.scan(runner.books)
+            ]
+        }
 
     @app.post("/api/kill", dependencies=[Depends(_auth)])
     async def kill(reason: str = "manual") -> dict[str, Any]:

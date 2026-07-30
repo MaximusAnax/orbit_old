@@ -144,8 +144,15 @@ class PaperFillModel:
             return None, book
 
         avg = cost // filled
+        # Each book level consumed is a separate fill, and Kalshi's cent
+        # ceiling applies per fill. Charging one rounding for a five-level
+        # sweep is the difference between a backtest that looks profitable and
+        # one that is.
         fee = fee_model.trade_fee_pips(
-            price_pips=avg, size=filled, liquidity=Liquidity.TAKER
+            price_pips=avg,
+            size=filled,
+            liquidity=Liquidity.TAKER,
+            n_fills=max(1, len(consumed)),
         )
         fill = Fill(
             market_key=request.market_key,

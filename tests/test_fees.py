@@ -246,3 +246,54 @@ class TestCrossVenueFeeAsymmetry:
         per_contract_cents = cost / size / PIPS_PER_CENT
         assert 3.0 < per_contract_cents < 4.0
         assert not math.isnan(per_contract_cents)
+
+
+class TestFillFragmentation:
+    """The cent-ceiling applies per fill, not per order.
+
+    Under-modelling this is the most common way a prediction-market backtest
+    overstates profit, and it bites hardest on exactly the small orders and
+    thin books a $5k account trades.
+    """
+
+    def test_fragmenting_an_order_costs_more(self):
+        fees = KalshiFees()
+        args = {"price_pips": cents_to_pips(50), "liquidity": Liquidity.TAKER}
+        one_block = fees.trade_fee_pips(size=20, n_fills=1, **args)
+        twenty_pieces = fees.trade_fee_pips(size=20, n_fills=20, **args)
+        assert twenty_pieces > one_block
+        # 20 x ceil(1.75c) = 40c against ceil(35.0c) = 35c.
+        assert twenty_pieces == 40 * PIPS_PER_CENT
+        assert one_block == 35 * PIPS_PER_CENT
+
+    def test_fee_is_monotone_in_fragmentation(self):
+        fees = KalshiFees()
+        args = {"price_pips": cents_to_pips(37), "size": 60,
+                "liquidity": Liquidity.TAKER}
+        costs = [fees.trade_fee_pips(n_fills=n, **args) for n in (1, 2, 3, 6, 60)]
+        assert costs == sorted(costs)
+
+    def test_n_fills_cannot_exceed_size(self):
+        fees = KalshiFees()
+        args = {"price_pips": cents_to_pips(50), "size": 3,
+                "liquidity": Liquidity.TAKER}
+        assert fees.trade_fee_pips(n_fills=3, **args) == fees.trade_fee_pips(
+            n_fills=99, **args
+        )
+
+    def test_n_fills_is_ignored_below_one(self):
+        fees = KalshiFees()
+        args = {"price_pips": cents_to_pips(50), "size": 10,
+                "liquidity": Liquidity.TAKER}
+        assert fees.trade_fee_pips(n_fills=0, **args) == fees.trade_fee_pips(
+            n_fills=1, **args
+        )
+
+    def test_polymarket_fragmentation_is_cost_neutral(self):
+        """A proportional fee has no rounding to exploit or suffer."""
+        fees = PolymarketFees(PolymarketFeeSchedule(taker_fee_bps=100))
+        args = {"price_pips": cents_to_pips(50), "size": 100,
+                "liquidity": Liquidity.TAKER}
+        assert fees.trade_fee_pips(n_fills=1, **args) == fees.trade_fee_pips(
+            n_fills=50, **args
+        )

@@ -39,8 +39,19 @@ class Liquidity(StrEnum):
 class FeeModel(Protocol):
     """Common interface so backtest and live paths cannot diverge."""
 
-    def trade_fee_pips(self, *, price_pips: int, size: int, liquidity: Liquidity) -> int:
-        """Fee in pips for executing ``size`` contracts at ``price_pips``."""
+    def trade_fee_pips(
+        self,
+        *,
+        price_pips: int,
+        size: int,
+        liquidity: Liquidity,
+        n_fills: int = 1,
+    ) -> int:
+        """Fee in pips for executing ``size`` contracts at ``price_pips``.
+
+        ``n_fills`` models fill fragmentation for venues whose fee rounding is
+        applied per fill rather than per order.
+        """
         ...
 
     def settlement_fee_pips(self, *, size: int, settled_yes: bool) -> int:
@@ -77,11 +88,13 @@ class KalshiFeeSchedule:
     fifth of what trading at 50c costs, which is why deep-in-the-money carry
     trades survive fees when mid-book scalping does not.
 
-    The ceiling is applied **per order, to the next whole cent** — so small
-    orders are penalised. A single contract at 50c owes ceil(1.75c) = 2c, a
-    4% tax; a hundred contracts owe 175c, a 3.5% tax. Order sizing therefore
-    interacts with fees directly, and :meth:`KalshiFees.min_profitable_size`
-    exists to make that explicit.
+    The ceiling is applied **per fill, to the next whole cent** — so small and
+    fragmented executions are penalised. A single contract at 50c owes
+    ceil(1.75c) = 2c, a 4% tax; a hundred contracts filling as one block owe
+    175c, a 3.5% tax; the same hundred filling as a hundred 1-lots owe 200c.
+    Order sizing and expected fragmentation therefore interact with fees
+    directly, which is what :meth:`KalshiFees.min_profitable_size` and the
+    ``n_fills`` parameter exist to make explicit.
     """
 
     #: Multiplier in the taker fee formula.
@@ -106,7 +119,28 @@ class KalshiFees:
     def __init__(self, schedule: KalshiFeeSchedule | None = None) -> None:
         self.schedule = schedule or KalshiFeeSchedule()
 
-    def trade_fee_pips(self, *, price_pips: int, size: int, liquidity: Liquidity) -> int:
+    def trade_fee_pips(
+        self,
+        *,
+        price_pips: int,
+        size: int,
+        liquidity: Liquidity,
+        n_fills: int = 1,
+    ) -> int:
+        """Fee for executing ``size`` contracts at ``price_pips``.
+
+        ``n_fills`` models **fill fragmentation**, which is the most commonly
+        under-modelled cost on this venue. The cent-ceiling is applied per
+        *fill*, not per order, so an order that executes against five separate
+        resting orders owes five roundings rather than one. A 20-lot at 50c
+        filling in one piece owes ceil(35.0c) = 35c; the same 20-lot filling as
+        twenty 1-lots owes 20 x ceil(1.75c) = 40c — a 14% higher cost for
+        identical execution.
+
+        The effect is largest exactly where it hurts most: small orders on thin
+        books, which is what a $5k account trades. A backtest that assumes one
+        fill per order systematically overstates profitability.
+        """
         if size <= 0:
             return 0
         rate = (
@@ -116,7 +150,21 @@ class KalshiFees:
         )
         if rate == 0.0:
             return 0
-        return self._formula_pips(rate=rate, price_pips=price_pips, size=size)
+
+        n_fills = max(1, min(n_fills, size))
+        if n_fills == 1:
+            return self._formula_pips(rate=rate, price_pips=price_pips, size=size)
+
+        # Split as evenly as the venue would; each piece rounds independently.
+        base, extra = divmod(size, n_fills)
+        total = 0
+        for i in range(n_fills):
+            piece = base + (1 if i < extra else 0)
+            if piece:
+                total += self._formula_pips(
+                    rate=rate, price_pips=price_pips, size=piece
+                )
+        return total
 
     @staticmethod
     def _formula_pips(*, rate: float, price_pips: int, size: int) -> int:
@@ -223,7 +271,15 @@ class PolymarketFees:
     def __init__(self, schedule: PolymarketFeeSchedule | None = None) -> None:
         self.schedule = schedule or PolymarketFeeSchedule()
 
-    def trade_fee_pips(self, *, price_pips: int, size: int, liquidity: Liquidity) -> int:
+    def trade_fee_pips(
+        self,
+        *,
+        price_pips: int,
+        size: int,
+        liquidity: Liquidity,
+        n_fills: int = 1,
+    ) -> int:
+        del n_fills  # proportional fee: fragmentation is cost-neutral
         if size <= 0:
             return 0
         bps = (
