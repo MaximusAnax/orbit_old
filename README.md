@@ -174,6 +174,9 @@ Defaults are paper mode, demo endpoints, trading disabled. Beyond that:
 
 ## Documentation
 
+- [`docs/RETURNS.md`](docs/RETURNS.md) — **what returns are actually
+  achievable**, with base rates, documented winners and losers, and the honest
+  paths to more money. Read this before setting a target.
 - [`docs/STRATEGY.md`](docs/STRATEGY.md) — research findings, what works, what
   provably does not, and why
 - [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — operations, incidents, go-live checklist
