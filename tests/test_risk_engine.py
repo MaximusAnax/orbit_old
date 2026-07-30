@@ -280,3 +280,75 @@ class TestReporting:
         d = ks.as_dict()
         assert d["tripped"] is True and d["reason"] == "test"
         assert d["tripped_at"] is not None
+
+
+class TestEquityAccounting:
+    """Deploying capital must never register as a loss.
+
+    With equity measured as cash alone, opening a position moves cash by the
+    price paid or premium received, so every new trade looks like an instant
+    profit or loss. That made deploying 30% of the account read as a 30%
+    drawdown and tripped the kill switch on the first normal-sized trade.
+    """
+
+    def test_opening_a_long_is_equity_neutral(self, engine):
+        start = engine.state.equity_pips()
+        engine.record_fill(fill(size=1000, cents=50))
+        assert engine.state.equity_pips() == start
+        assert engine.state.drawdown_fraction() == 0.0
+
+    def test_opening_a_short_is_equity_neutral(self, engine):
+        start = engine.state.equity_pips()
+        engine.record_fill(fill(side=Side.SELL, size=1000, cents=70))
+        assert engine.state.equity_pips() == start
+        assert engine.state.drawdown_fraction() == 0.0
+
+    def test_deploying_heavily_does_not_trip_the_kill_switch(self, engine):
+        """The exact failure that made the system unusable in production."""
+        engine.record_fill(fill(size=3000, cents=50))  # 30% of a $5,000 account
+        assert engine.state.deployed_pips() == 3000 * c(50)
+        assert engine.state.drawdown_fraction() == 0.0
+        assert not engine.kill.is_tripped
+
+    def test_only_fees_and_realised_pnl_move_equity(self, engine):
+        start = engine.state.equity_pips()
+        engine.record_fill(fill(size=100, cents=50, fee=17_500))
+        assert engine.state.equity_pips() == start - 17_500
+
+    def test_a_real_loss_still_registers_as_drawdown(self, engine):
+        """The limit must still work — this is not a way to hide losses."""
+        engine.record_fill(fill(size=1000, cents=50))
+        engine.record_settlement("kalshi:A", settled_yes=False)
+        assert engine.state.drawdown_fraction() > 0
+        assert engine.state.equity_pips() == BANKROLL - 1000 * c(50)
+
+    def test_settlement_cash_is_the_payout_not_the_collateral(self, engine):
+        """Long: cash rises by $1 per contract at settlement."""
+        start = engine.state.bankroll_pips
+        engine.record_fill(fill(size=100, cents=40))
+        engine.record_settlement("kalshi:A", settled_yes=True)
+        assert engine.state.bankroll_pips == start + 100 * c(60)
+
+    def test_short_settling_in_its_favour_keeps_the_premium(self, engine):
+        """Short: cash already holds the premium; settlement adds nothing."""
+        start = engine.state.bankroll_pips
+        engine.record_fill(fill(side=Side.SELL, size=100, cents=70))
+        assert engine.state.bankroll_pips == start + 100 * c(70)
+        pnl = engine.record_settlement("kalshi:A", settled_yes=False)
+        assert pnl == 100 * c(70)
+        assert engine.state.bankroll_pips == start + 100 * c(70)
+        assert engine.state.equity_pips() == BANKROLL + 100 * c(70)
+
+    def test_short_settling_against_it_pays_out_a_dollar(self, engine):
+        start = engine.state.bankroll_pips
+        engine.record_fill(fill(side=Side.SELL, size=100, cents=70))
+        pnl = engine.record_settlement("kalshi:A", settled_yes=True)
+        assert pnl == -100 * c(30)
+        assert engine.state.bankroll_pips == start - 100 * c(30)
+        assert engine.state.equity_pips() == BANKROLL - 100 * c(30)
+
+    def test_equity_equals_bankroll_when_flat(self, engine):
+        engine.record_fill(fill(size=100, cents=50))
+        engine.record_fill(fill(side=Side.SELL, size=100, cents=50))
+        assert engine.state.positions["kalshi:A"].is_flat
+        assert engine.state.equity_pips() == engine.state.bankroll_pips

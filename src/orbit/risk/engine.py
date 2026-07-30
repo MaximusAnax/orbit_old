@@ -27,7 +27,7 @@ from typing import Any
 
 import structlog
 
-from orbit.core.money import format_usd
+from orbit.core.money import PIPS_PER_DOLLAR, format_usd
 from orbit.core.types import Fill, OrderRequest, Position, Signal
 from orbit.risk.sizing import correlated_kelly_scale
 
@@ -136,13 +136,29 @@ class RiskState:
         )
 
     def equity_pips(self) -> int:
-        """Cash plus collateral. Marks positions at cost, not at market.
+        """Cash plus the cost basis of open positions.
 
-        Deliberate: marking a thin prediction-market book to its own mid makes
-        equity jump on a single stale quote, and drawdown limits keyed to that
-        would trip on noise. Realised PnL drives the risk limits.
+        Positions are valued **at cost, not at market**. Marking a thin
+        prediction-market book to its own mid makes equity jump on a single
+        stale quote, and a drawdown limit keyed to that would trip on noise
+        rather than on losses.
+
+        Including the cost basis is what makes deploying capital
+        equity-neutral, and it is not optional. Cash alone falls by the price
+        paid when opening a long and rises by the premium when opening a
+        short, so an equity figure of cash alone treats *every* new position as
+        an instant profit or loss. With cash-only equity, deploying 30% of the
+        account registered as a 30% drawdown and tripped the kill switch on the
+        first normal-sized trade.
+
+        Adding the basis cancels that exactly: a long costs cash and adds a
+        positive basis, a short receives cash and adds a negative one, so only
+        realised PnL and fees move equity — which is precisely what the
+        drawdown and daily-loss limits are meant to measure.
         """
-        return self.bankroll_pips
+        return self.bankroll_pips + sum(
+            p.cost_basis_pips for p in self.positions.values()
+        )
 
     def drawdown_fraction(self) -> float:
         if self.peak_equity_pips <= 0:
@@ -409,11 +425,16 @@ class RiskEngine:
         pos = self.state.positions.get(market_key)
         if pos is None or pos.is_flat:
             return 0
-        collateral = pos.collateral_pips()
+        # Cash moves by the settlement payout only. The premium or price paid
+        # already moved cash when the position opened, so adding collateral
+        # back on top would double-count it — and would be wrong in opposite
+        # directions for longs and shorts. Equity still changes by exactly the
+        # PnL, because the position's cost basis leaves the book at the same
+        # time.
+        payout_pips = pos.size * (PIPS_PER_DOLLAR if settled_yes else 0)
         pnl = pos.settle(settled_yes=settled_yes)
         self.state.realized_pnl_today_pips += pnl
-        # Collateral returns to cash along with the profit or loss.
-        self.state.bankroll_pips += collateral + pnl
+        self.state.bankroll_pips += payout_pips
         self.state.positions.pop(market_key, None)
         self.state.peak_equity_pips = max(
             self.state.peak_equity_pips, self.state.equity_pips()
