@@ -87,6 +87,26 @@ class TestUniverseSelection:
 
 
 class TestPolling:
+    async def test_refreshes_the_universe_on_the_very_first_iteration(self, store):
+        """Startup must not wait a full refresh interval before doing anything.
+
+        The event loop clock has an arbitrary origin, so a "last refreshed at
+        0.0" sentinel silently means "not due yet" on a freshly started
+        process. That made the recorder idle for its first fifteen minutes -
+        invisible in logs and dependent on clock origin, so the other tests
+        passed or failed by luck. A long refresh interval here would mask the
+        bug, so it is deliberately set larger than the test runtime.
+        """
+        adapter = FakeAdapter()
+        rec = Recorder(
+            [adapter],
+            store,
+            RecorderConfig(poll_interval_s=0.01, universe_refresh_s=86_400),
+        )
+        await run_briefly(rec, seconds=0.2, stream=False)
+        assert rec.health["kalshi"].markets_tracked > 0
+        assert rec.health["kalshi"].books_recorded > 0
+
     async def test_records_books_and_reports_health(self, store):
         adapter = FakeAdapter()
         rec = Recorder([adapter], store, RecorderConfig(poll_interval_s=0.02))
