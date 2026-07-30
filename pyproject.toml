@@ -66,7 +66,7 @@ mypy_path = "src"
 packages = ["orbit"]
 
 [[tool.mypy.overrides]]
-module = ["web3.*", "eth_account.*", "duckdb.*"]
+module = ["web3.*", "eth_account.*", "duckdb.*", "py_clob_client.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

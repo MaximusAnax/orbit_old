@@ -129,10 +129,15 @@ class VenueAdapter(ABC):
         """Fetch a single book, normalised to YES-space."""
 
     @abstractmethod
-    async def stream_books(
-        self, venue_ids: Sequence[str]
-    ) -> AsyncIterator[OrderBook]:
-        """Stream book updates. Must resubscribe transparently on reconnect."""
+    def stream_books(self, venue_ids: Sequence[str]) -> AsyncIterator[OrderBook]:
+        """Stream book updates. Must resubscribe transparently on reconnect.
+
+        Declared without ``async`` because implementations are async
+        *generators*: calling this returns the iterator directly rather than a
+        coroutine that must be awaited first. Declaring it ``async`` here type-
+        checks as ``Coroutine[..., AsyncIterator]`` and makes every ``async
+        for`` over it an error.
+        """
 
     # -- trading ------------------------------------------------------------
 
@@ -141,6 +146,15 @@ class VenueAdapter(ABC):
 
     @abstractmethod
     async def cancel_order(self, order: Order) -> Order: ...
+
+    @abstractmethod
+    async def cancel_all(self) -> int:
+        """Cancel every resting order, returning how many were cancelled.
+
+        Part of the contract rather than an optional extra, because the kill
+        switch depends on it. An adapter that merely happened not to implement
+        this would make an emergency halt silently do nothing.
+        """
 
     @abstractmethod
     async def get_open_orders(self) -> list[Order]: ...

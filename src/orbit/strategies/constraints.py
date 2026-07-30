@@ -360,28 +360,28 @@ class PartitionConstraint(Constraint):
     def find_violation(
         self, books: dict[str, OrderBook], *, max_size: int
     ) -> tuple[ArbLeg, ...] | None:
-        asks = [books[k].best_ask for k in self.market_keys]
-        bids = [books[k].best_bid for k in self.market_keys]
+        raw_asks = [books[k].best_ask for k in self.market_keys]
+        raw_bids = [books[k].best_bid for k in self.market_keys]
 
         # Buy the field: the complete set costs less than the $1 it must pay.
-        if all(a is not None for a in asks):
-            total = sum(a.price_pips for a in asks)  # type: ignore[union-attr]
-            if total < PIPS_PER_DOLLAR:
-                size = min(min(a.size for a in asks), max_size)  # type: ignore[union-attr]
+        if all(a is not None for a in raw_asks):
+            asks = [a for a in raw_asks if a is not None]
+            if sum(a.price_pips for a in asks) < PIPS_PER_DOLLAR:
+                size = min(min(a.size for a in asks), max_size)
                 if size > 0:
                     return tuple(
-                        ArbLeg(key, Side.BUY, size, a.price_pips)  # type: ignore[union-attr]
+                        ArbLeg(key, Side.BUY, size, a.price_pips)
                         for key, a in zip(self.market_keys, asks, strict=True)
                     )
 
         # Sell the field: the set can be sold for more than the $1 it can cost.
-        if all(b is not None for b in bids):
-            total = sum(b.price_pips for b in bids)  # type: ignore[union-attr]
-            if total > PIPS_PER_DOLLAR:
-                size = min(min(b.size for b in bids), max_size)  # type: ignore[union-attr]
+        if all(b is not None for b in raw_bids):
+            bids = [b for b in raw_bids if b is not None]
+            if sum(b.price_pips for b in bids) > PIPS_PER_DOLLAR:
+                size = min(min(b.size for b in bids), max_size)
                 if size > 0:
                     return tuple(
-                        ArbLeg(key, Side.SELL, size, b.price_pips)  # type: ignore[union-attr]
+                        ArbLeg(key, Side.SELL, size, b.price_pips)
                         for key, b in zip(self.market_keys, bids, strict=True)
                     )
         return None
@@ -448,42 +448,37 @@ class ThresholdBucketConstraint(Constraint):
         buckets = [books[k] for k in bucket_keys]
 
         t_bid, t_ask = threshold.best_bid, threshold.best_ask
-        bucket_asks = [b.best_ask for b in buckets]
-        bucket_bids = [b.best_bid for b in buckets]
+        # Drop Nones once so the rest of the function works on concrete levels;
+        # a short list means some bucket has no quote and the leg is untradable.
+        bucket_asks = [lvl for b in buckets if (lvl := b.best_ask) is not None]
+        bucket_bids = [lvl for b in buckets if (lvl := b.best_bid) is not None]
+        complete = len(buckets)
 
         # Case 1: buckets are collectively cheaper than the threshold bid.
         # Buy every bucket, sell the threshold.
-        if t_bid is not None and all(a is not None for a in bucket_asks):
-            cost = sum(a.price_pips for a in bucket_asks)  # type: ignore[union-attr]
+        if t_bid is not None and len(bucket_asks) == complete:
+            cost = sum(a.price_pips for a in bucket_asks)
             if cost < t_bid.price_pips:
-                size = min(
-                    t_bid.size,
-                    min(a.size for a in bucket_asks),  # type: ignore[union-attr]
-                    max_size,
-                )
+                size = min(t_bid.size, min(a.size for a in bucket_asks), max_size)
                 if size > 0:
                     return (
                         ArbLeg(threshold_key, Side.SELL, size, t_bid.price_pips),
                         *(
-                            ArbLeg(k, Side.BUY, size, a.price_pips)  # type: ignore[union-attr]
+                            ArbLeg(k, Side.BUY, size, a.price_pips)
                             for k, a in zip(bucket_keys, bucket_asks, strict=True)
                         ),
                     )
 
         # Case 2: the threshold is cheaper than selling every bucket.
-        if t_ask is not None and all(b is not None for b in bucket_bids):
-            proceeds = sum(b.price_pips for b in bucket_bids)  # type: ignore[union-attr]
+        if t_ask is not None and len(bucket_bids) == complete:
+            proceeds = sum(b.price_pips for b in bucket_bids)
             if t_ask.price_pips < proceeds:
-                size = min(
-                    t_ask.size,
-                    min(b.size for b in bucket_bids),  # type: ignore[union-attr]
-                    max_size,
-                )
+                size = min(t_ask.size, min(b.size for b in bucket_bids), max_size)
                 if size > 0:
                     return (
                         ArbLeg(threshold_key, Side.BUY, size, t_ask.price_pips),
                         *(
-                            ArbLeg(k, Side.SELL, size, b.price_pips)  # type: ignore[union-attr]
+                            ArbLeg(k, Side.SELL, size, b.price_pips)
                             for k, b in zip(bucket_keys, bucket_bids, strict=True)
                         ),
                     )

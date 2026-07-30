@@ -358,3 +358,53 @@ class TestBacktester:
         report = await Backtester(runner).run([])
         assert report["books_replayed"] == 0
         assert report["window"] is None
+
+
+class TestKillSwitchExecutionPath:
+    """The kill switch must never fail quietly.
+
+    An emergency halt that logs nothing and cancels nothing looks identical to
+    one that worked, which is the worst possible failure mode for this path.
+    """
+
+    def test_cancel_all_is_part_of_the_adapter_contract(self):
+        """So no adapter can exist that silently cannot be halted."""
+        from orbit.venues.base import VenueAdapter
+
+        assert "cancel_all" in VenueAdapter.__abstractmethods__
+
+    async def test_cancels_across_every_venue(self):
+        from orbit.core.types import Venue
+        from tests.fakes import FakeAdapter
+
+        kalshi, poly = FakeAdapter(Venue.KALSHI), FakeAdapter(Venue.POLYMARKET)
+        for adapter in (kalshi, poly):
+            await adapter.place_order(
+                OrderRequest(f"{adapter.venue.value}:A", Side.BUY, 10, c(30))
+            )
+        executor = Executor(
+            {"kalshi": kalshi, "polymarket": poly}, mode=ExecutionMode.LIVE
+        )
+        assert await executor.cancel_all() == 2
+
+    async def test_a_failing_venue_does_not_stop_the_others(self):
+        """One venue being down must not leave another venue's orders resting."""
+        from orbit.core.types import Venue
+        from orbit.venues.base import VenueError
+        from tests.fakes import FakeAdapter
+
+        good = FakeAdapter(Venue.KALSHI)
+        await good.place_order(OrderRequest("kalshi:A", Side.BUY, 10, c(30)))
+
+        class BrokenAdapter(FakeAdapter):
+            async def cancel_all(self) -> int:
+                raise VenueError("venue down", venue="polymarket", retryable=True)
+
+        executor = Executor(
+            {"kalshi": good, "polymarket": BrokenAdapter(Venue.POLYMARKET)},
+            mode=ExecutionMode.LIVE,
+        )
+        assert await executor.cancel_all() == 1
+
+    async def test_paper_mode_has_nothing_to_cancel(self):
+        assert await Executor({}, mode=ExecutionMode.PAPER).cancel_all() == 0

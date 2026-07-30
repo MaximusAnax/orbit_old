@@ -343,7 +343,13 @@ class Executor:
         if self.mode is not ExecutionMode.LIVE:
             return 0
         total = 0
-        for adapter in self.adapters.values():
-            with contextlib.suppress(VenueError, AttributeError):
+        for venue, adapter in self.adapters.items():
+            # Venue errors are suppressed and reported, but a *missing*
+            # cancel_all is not caught here: it is a contract violation that
+            # must surface loudly rather than make an emergency halt quietly
+            # do nothing.
+            try:
                 total += await asyncio.wait_for(adapter.cancel_all(), timeout=10.0)
+            except (VenueError, TimeoutError) as exc:
+                log.error("killswitch.cancel_failed", venue=venue, error=str(exc))
         return total
