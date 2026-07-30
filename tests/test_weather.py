@@ -362,3 +362,69 @@ class TestCalibration:
         t = CalibrationTracker()
         t.add(CalibrationRecord("m", 0.6, True, c(55), TS))
         json.dumps(t.summary())
+
+
+class TestWeatherData:
+    """Parsing and the local-day boundary.
+
+    The local-day split is where fact and forecast are separated, so an
+    off-by-one here silently attributes yesterday evening's observations to
+    today's contract and fabricates a floor that does not exist.
+    """
+
+    def test_celsius_conversion(self):
+        from orbit.data.weather import celsius_to_f
+
+        assert celsius_to_f(0) == 32.0
+        assert celsius_to_f(100) == 212.0
+        assert celsius_to_f(23.9) == pytest.approx(75.02, abs=0.01)
+
+    def test_daily_extremes_group_by_local_day(self):
+        from orbit.data.weather import Observation, daily_extremes
+
+        # 03:00 UTC on the 31st is 23:00 on the 30th at UTC-4.
+        obs = [
+            Observation(datetime(2026, 7, 30, 18, tzinfo=UTC), 78.0, "KNYC"),
+            Observation(datetime(2026, 7, 30, 20, tzinfo=UTC), 82.0, "KNYC"),
+            Observation(datetime(2026, 7, 31, 3, tzinfo=UTC), 70.0, "KNYC"),
+            Observation(datetime(2026, 7, 31, 18, tzinfo=UTC), 65.0, "KNYC"),
+        ]
+        extremes = daily_extremes(obs, timezone_offset_h=-4)
+        assert extremes["2026-07-30"] == (82.0, 70.0)
+        assert extremes["2026-07-31"] == (65.0, 65.0)
+
+    def test_station_day_reports_observed_extremes(self):
+        from orbit.data.weather import StationDay
+
+        day = StationDay("KNYC", "2026-07-30", observations=[70.0, 78.0, 74.0])
+        assert day.observed_max == 78.0
+        assert day.observed_min == 70.0
+        assert day.is_usable()
+
+    def test_a_station_day_with_nothing_is_not_usable(self):
+        """No data must degrade to no opinion, never to a fabricated one."""
+        from orbit.data.weather import StationDay
+
+        assert not StationDay("KNYC", "2026-07-30").is_usable()
+
+    def test_forecast_only_day_is_usable(self):
+        from orbit.data.weather import StationDay
+
+        day = StationDay("KNYC", "2026-07-30", remaining_forecast=75.0)
+        assert day.is_usable()
+
+    def test_station_day_feeds_the_model_directly(self):
+        """The two halves line up: observations censor, forecast estimates."""
+        from orbit.data.weather import StationDay
+
+        day = StationDay(
+            "KNYC", "2026-07-30", observations=[70.0, 79.0], remaining_forecast=72.0,
+            hours_remaining=5.0,
+        )
+        dist = daily_max_distribution(
+            observations=day.observations,
+            remaining_forecast=day.remaining_forecast,
+            lead_hours=day.hours_remaining,
+        )
+        assert dist.prob_at_or_above(78.0) == 1.0
+        assert dist.prob_at_or_above(85.0) < 0.05
