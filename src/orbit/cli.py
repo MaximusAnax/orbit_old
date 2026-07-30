@@ -1,0 +1,384 @@
+"""Command-line entrypoint.
+
+Subcommands are ordered by the sequence you should actually use them in:
+
+    orbit record      start the archive — do this first, and never stop it
+    orbit scan        one-shot look at what the constraints currently find
+    orbit backtest    replay the archive through the strategy
+    orbit paper       run the full loop with simulated fills
+    orbit live        the same loop with real money (three explicit switches)
+    orbit status      what a running instance is doing
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import contextlib
+import json
+import logging
+import sys
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+import structlog
+
+from orbit.config import Settings, get_settings
+from orbit.core.fees import KalshiFees, PolymarketFees
+from orbit.data.recorder import Recorder, RecorderConfig
+from orbit.data.store import TickStore
+from orbit.engine.executor import ExecutionMode, Executor
+from orbit.engine.runner import Backtester, TradingRunner
+from orbit.risk.engine import RiskEngine
+from orbit.strategies.constraints import ConstraintScanner
+from orbit.strategies.discovery import build_constraints_for
+from orbit.venues.base import VenueAdapter
+
+log = structlog.get_logger(__name__)
+
+
+def setup_logging(settings: Settings) -> None:
+    logging.basicConfig(
+        level=getattr(logging, settings.log_level.upper(), logging.INFO),
+        format="%(message)s",
+        stream=sys.stdout,
+    )
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            (
+                structlog.processors.JSONRenderer()
+                if settings.log_json
+                else structlog.dev.ConsoleRenderer()
+            ),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(
+            getattr(logging, settings.log_level.upper(), logging.INFO)
+        ),
+    )
+
+
+def build_adapters(settings: Settings) -> dict[str, VenueAdapter]:
+    """Construct only the venues that are actually configured."""
+    adapters: dict[str, VenueAdapter] = {}
+    if settings.has_kalshi:
+        from orbit.venues.kalshi import KalshiAdapter, KalshiSigner
+
+        adapters["kalshi"] = KalshiAdapter(
+            KalshiSigner.from_file(
+                settings.kalshi_key_id, settings.kalshi_private_key_path
+            ),
+            demo=settings.use_demo_endpoints,
+        )
+    if settings.has_polymarket:
+        from orbit.venues.polymarket import PolymarketAdapter, PolymarketCredentials
+
+        adapters["polymarket"] = PolymarketAdapter(
+            PolymarketCredentials(
+                private_key=settings.polymarket_private_key,
+                api_key=settings.polymarket_api_key,
+                api_secret=settings.polymarket_api_secret,
+                api_passphrase=settings.polymarket_api_passphrase,
+                funder=settings.polymarket_funder_address,
+                signature_type=settings.polymarket_signature_type,
+            )
+        )
+    return adapters
+
+
+def build_runner(
+    settings: Settings, adapters: dict[str, VenueAdapter], *, mode: ExecutionMode
+) -> TradingRunner:
+    scanner = ConstraintScanner(
+        fee_models={"kalshi": KalshiFees(), "polymarket": PolymarketFees()},
+        min_profit_pips=settings.min_profit_pips,
+        max_size=settings.max_contracts_per_trade,
+    )
+    return TradingRunner(
+        scanner=scanner,
+        risk=RiskEngine(settings.risk_limits(), bankroll_pips=settings.bankroll_pips),
+        executor=Executor(adapters, mode=mode),
+        store=TickStore(settings.data_dir),
+        scan_interval_s=settings.scan_interval_s,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+
+async def cmd_record(settings: Settings, args: argparse.Namespace) -> int:
+    """Run the recorder. The first thing to deploy and the last to stop."""
+    adapters = build_adapters(settings)
+    if not adapters:
+        print(
+            "No venues configured. Set ORBIT_KALSHI_KEY_ID and "
+            "ORBIT_KALSHI_PRIVATE_KEY_PATH, and/or ORBIT_POLYMARKET_PRIVATE_KEY.",
+            file=sys.stderr,
+        )
+        return 1
+
+    store = TickStore(settings.data_dir)
+    recorder = Recorder(
+        list(adapters.values()),
+        store,
+        RecorderConfig(
+            poll_interval_s=settings.record_interval_s,
+            max_markets_per_venue=settings.max_markets_per_venue,
+        ),
+    )
+    log.info("record.start", venues=list(adapters), data_dir=str(settings.data_dir))
+    try:
+        await recorder.run(stream=args.stream)
+    except KeyboardInterrupt:
+        await recorder.stop()
+    finally:
+        for adapter in adapters.values():
+            with contextlib.suppress(Exception):
+                await adapter.close()
+    return 0
+
+
+async def cmd_scan(settings: Settings, args: argparse.Namespace) -> int:
+    """One-shot scan. Answers 'is there anything here at all?'"""
+    adapters = build_adapters(settings)
+    if not adapters:
+        print("No venues configured.", file=sys.stderr)
+        return 1
+
+    runner = build_runner(settings, adapters, mode=ExecutionMode.PAPER)
+    try:
+        for venue, adapter in adapters.items():
+            markets = await adapter.list_markets(limit=args.limit)
+            log.info("scan.markets", venue=venue, count=len(markets))
+            for constraint in build_constraints_for(markets):
+                runner.scanner.add(constraint)
+            books = await asyncio.gather(
+                *(adapter.get_book(m.venue_id) for m in markets),
+                return_exceptions=True,
+            )
+            for book in books:
+                if not isinstance(book, BaseException):
+                    runner.observe(book)
+
+        opportunities = runner.scanner.scan(runner.books)
+        print(
+            f"\n{len(runner.scanner.constraints)} constraints over "
+            f"{len(runner.books)} markets\n"
+        )
+        if not opportunities:
+            print("No violations found right now.")
+            print(
+                "\nThis is the expected result most of the time. Run "
+                "`orbit record` continuously and check the archive over days,\n"
+                "not the live book over seconds."
+            )
+        for opp in opportunities[:20]:
+            print(f"  {opp}")
+            print(f"      {opp.rationale}")
+            print(f"      execution risk: {opp.execution_risk}")
+    finally:
+        for adapter in adapters.values():
+            with contextlib.suppress(Exception):
+                await adapter.close()
+    return 0
+
+
+async def cmd_backtest(settings: Settings, args: argparse.Namespace) -> int:
+    """Replay the recorded archive through the strategy."""
+    store = TickStore(settings.data_dir)
+    stats = store.stats()
+    if not stats["books"]["files"]:
+        print(
+            "No recorded data. Run `orbit record` first — there is no public\n"
+            "historical order-book archive for these venues, so the backtest\n"
+            "can only run on data you have collected yourself.",
+            file=sys.stderr,
+        )
+        return 1
+
+    since = datetime.now(UTC) - timedelta(days=args.days)
+    books = list(store.read_books(start=since))
+    if not books:
+        print(f"No data in the last {args.days} days.", file=sys.stderr)
+        return 1
+
+    runner = build_runner(settings, {}, mode=ExecutionMode.BACKTEST)
+    market_keys = {b.market_key for b in books}
+    log.info("backtest.start", books=len(books), markets=len(market_keys))
+
+    # Reconstruct the constraint set from the recorded market universe.
+    from orbit.data.store import BOOK_DEPTH  # noqa: F401  (documented shape)
+
+    for constraint in build_constraints_for(
+        [], market_keys=sorted(market_keys)
+    ):
+        runner.scanner.add(constraint)
+
+    report = await Backtester(runner).run(books)
+    print(json.dumps(report, indent=2, default=str))
+    return 0
+
+
+async def cmd_trade(settings: Settings, args: argparse.Namespace) -> int:
+    """Run the full loop: record, scan, risk-check, execute, serve, alert."""
+    live = args.mode == "live"
+    if live and not settings.is_live:
+        print(
+            "Refusing to trade live. All three switches must be set:\n"
+            "  ORBIT_MODE=live\n"
+            "  ORBIT_TRADING_ENABLED=true\n"
+            "  ORBIT_USE_DEMO_ENDPOINTS=false",
+            file=sys.stderr,
+        )
+        return 1
+
+    adapters = build_adapters(settings)
+    if not adapters:
+        print("No venues configured.", file=sys.stderr)
+        return 1
+
+    mode = ExecutionMode.LIVE if live else ExecutionMode.PAPER
+    runner = build_runner(settings, adapters, mode=mode)
+    store = TickStore(settings.data_dir)
+    recorder = Recorder(
+        list(adapters.values()),
+        store,
+        RecorderConfig(
+            poll_interval_s=settings.record_interval_s,
+            max_markets_per_venue=settings.max_markets_per_venue,
+        ),
+    )
+
+    # Seed the constraint registry from the live universe.
+    for adapter in adapters.values():
+        markets = await adapter.list_markets(limit=settings.max_markets_per_venue)
+        for constraint in build_constraints_for(markets):
+            runner.scanner.add(constraint)
+    log.info(
+        "trade.start",
+        mode=mode.value,
+        constraints=len(runner.scanner.constraints),
+        **settings.describe(),
+    )
+
+    tasks = [
+        asyncio.create_task(recorder.run(stream=False), name="recorder"),
+        asyncio.create_task(runner.run(), name="runner"),
+    ]
+    if settings.api_token:
+        tasks.append(asyncio.create_task(_serve_api(settings, runner, recorder)))
+
+    try:
+        await asyncio.gather(*tasks)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        pass
+    finally:
+        await runner.stop()
+        await recorder.stop()
+        for adapter in adapters.values():
+            with contextlib.suppress(Exception):
+                await adapter.close()
+    return 0
+
+
+async def _serve_api(
+    settings: Settings, runner: TradingRunner, recorder: Recorder
+) -> None:
+    import uvicorn
+
+    from orbit.api.server import create_app, state
+
+    state.runner = runner
+    state.recorder = recorder
+    state.settings = settings
+    config = uvicorn.Config(
+        create_app(),
+        host=settings.api_host,
+        port=settings.api_port,
+        log_level="warning",
+    )
+    log.info("api.serving", url=f"http://{settings.api_host}:{settings.api_port}")
+    await uvicorn.Server(config).serve()
+
+
+async def cmd_status(settings: Settings, args: argparse.Namespace) -> int:
+    """Query a running instance."""
+    import httpx
+
+    url = f"http://{settings.api_host}:{settings.api_port}/api/status"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                url, headers={"Authorization": f"Bearer {settings.api_token}"}
+            )
+            resp.raise_for_status()
+            print(json.dumps(resp.json(), indent=2, default=str))
+    except Exception as exc:
+        print(f"Could not reach a running instance at {url}: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_config(settings: Settings, args: argparse.Namespace) -> int:
+    """Print effective configuration. Never prints secrets."""
+    print(json.dumps(settings.describe(), indent=2, default=str))
+    if not settings.is_live:
+        print("\nSimulation only — no real money can move in this configuration.")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="orbit", description="Prediction-market trading system"
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("record", help="record market data (start here)")
+    p.add_argument("--stream", action="store_true",
+                   help="use websockets instead of polling")
+    p.set_defaults(func=cmd_record, is_async=True)
+
+    p = sub.add_parser("scan", help="one-shot scan for constraint violations")
+    p.add_argument("--limit", type=int, default=200, help="markets per venue")
+    p.set_defaults(func=cmd_scan, is_async=True)
+
+    p = sub.add_parser("backtest", help="replay the recorded archive")
+    p.add_argument("--days", type=int, default=30)
+    p.set_defaults(func=cmd_backtest, is_async=True)
+
+    p = sub.add_parser("paper", help="run the loop with simulated fills")
+    p.set_defaults(func=cmd_trade, is_async=True, mode="paper")
+
+    p = sub.add_parser("live", help="run the loop with REAL MONEY")
+    p.set_defaults(func=cmd_trade, is_async=True, mode="live")
+
+    p = sub.add_parser("status", help="query a running instance")
+    p.set_defaults(func=cmd_status, is_async=True)
+
+    p = sub.add_parser("config", help="show effective configuration")
+    p.set_defaults(func=cmd_config, is_async=False)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    settings = get_settings()
+    setup_logging(settings)
+    result: Any = (
+        asyncio.run(args.func(settings, args))
+        if getattr(args, "is_async", False)
+        else args.func(settings, args)
+    )
+    return int(result or 0)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
