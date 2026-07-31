@@ -373,6 +373,54 @@ async def cmd_weather_study(settings: Settings, args: argparse.Namespace) -> int
     return 0
 
 
+def cmd_target(settings: Settings, args: argparse.Namespace) -> int:
+    """What a monthly return target requires, and what it risks."""
+    from orbit.risk.targets import (
+        capacity_limited_return,
+        feasibility_report,
+        required_edge,
+        simulate,
+    )
+
+    del settings
+    print(feasibility_report())
+
+    target = args.monthly / 100.0
+    print(f"\n\nTo make {target:.0%}/month:")
+    for dep in (0.10, 0.25, 0.50, 1.00):
+        r = required_edge(monthly_target=target, deployment=dep)
+        verdict = "plausible" if r.is_plausible else "IMPLAUSIBLE"
+        print(f"  deploy {dep:>4.0%}/cycle -> need a {r.required_edge_pp:>5.2f}pp "
+              f"edge   ({verdict})")
+
+    print(f"\n\nCapacity ceiling (edge {args.edge}pp, "
+          f"${args.capacity:,.0f} absorbable per cycle):")
+    print(f"{'bankroll':>10} {'deployed':>10} {'monthly %':>10} {'monthly $':>11}")
+    for bank in (5_000, 10_000, 25_000, 50_000, 100_000):
+        cap = capacity_limited_return(
+            bankroll=float(bank),
+            edge_per_cycle=args.edge / 100.0,
+            capacity_per_cycle=float(args.capacity),
+        )
+        print(f"{bank:>10,} {cap.deployed_per_cycle:>10,.0f} "
+              f"{cap.monthly_return:>9.1%} {cap.monthly_dollars:>11,.0f}")
+    print("\n  Note the last column. Past the capacity ceiling the dollar profit")
+    print("  is flat: a bigger account buys a smaller percentage, not more money.")
+
+    print("\n\nOne year at 97c on a believed 2pp edge, by deployment:")
+    print(f"{'deploy':>7} {'edge sd':>8}  outcome")
+    for dep in (0.10, 0.25, 0.50):
+        for sd in (0.0, 0.02):
+            sim = simulate(
+                believed_edge=0.02, true_edge_sd=sd, deployment=dep, trials=2000
+            )
+            print(f"{dep:>6.0%} {sd * 100:>7.1f}pp  {sim.summary()}")
+    print("\n  The median barely moves with edge uncertainty; the 5th percentile")
+    print("  collapses. Estimation error does not cost you the average outcome,")
+    print("  it costs you the bad ones.")
+    return 0
+
+
 async def cmd_status(settings: Settings, args: argparse.Namespace) -> int:
     """Query a running instance."""
     import httpx
@@ -434,6 +482,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--days", type=int, default=365)
     p.add_argument("--station", default="", help="e.g. KNYC; omit for all")
     p.set_defaults(func=cmd_weather_study, is_async=True)
+
+    p = sub.add_parser(
+        "target", help="what a monthly return target requires, and risks"
+    )
+    p.add_argument("--monthly", type=float, default=10.0, help="target %% per month")
+    p.add_argument("--edge", type=float, default=1.0, help="edge in pp per cycle")
+    p.add_argument("--capacity", type=float, default=2500.0,
+                   help="dollars absorbable per settlement cycle")
+    p.set_defaults(func=cmd_target, is_async=False)
 
     p = sub.add_parser("status", help="query a running instance")
     p.set_defaults(func=cmd_status, is_async=True)
