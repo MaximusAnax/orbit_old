@@ -1,8 +1,8 @@
 # What returns are actually achievable
 
-Written because the target moved to **$1,000/month on $5,000**, with an
-aspiration far higher, prompted by a second-hand account of someone making
-$300k in six months.
+Written because the target moved to **$1,000/month of return on $5,000**
+(reinvested, not withdrawn), with an aspiration far higher, prompted by a
+second-hand account of someone making $300k in six months.
 
 This document exists to make that decision on evidence. Sources are cited
 throughout. Where a number could not be verified it says so.
@@ -13,8 +13,8 @@ throughout. Where a number could not be verified it says so.
 
 | Framing | What it requires |
 |---|---|
-| $1,000/mo on $5,000, simple | 20%/month, 240%/year |
-| $1,000/mo on $5,000, compounded | **791%/year** |
+| $1,000/mo on $5,000, **month one** | 20%/month |
+| Sustained at 20%/month, compounded | **791%/year** |
 | Sustained 24 months | $5,000 → ~$397,000 |
 | Sustained 36 months | $5,000 → ~$3.54M |
 | "$300k in 6 months" from a retail account | **~99%/month for six consecutive months** (60.9×) |
@@ -24,39 +24,62 @@ finance, did roughly 39% *per year* net over three decades — and closed to
 outside money because the strategy could not absorb more capital. On $5,000
 that rate is **$139/month**.
 
-### The withdrawal arithmetic — the part that actually decides this
+### Compounding vs withdrawing — these are different problems
 
-The framing above is still too generous, because you do not want 20%/month of
-*compounding*. You want $1,000 **taken out**, every month. That is a different
-and much harder problem: the account never builds a buffer, and every drawdown
-lands at full size.
+The target is **$1,000/month of return, reinvested**, not $1,000/month
+withdrawn. That distinction matters more than anything else in this document,
+so both cases are given.
 
-**Months until a $5,000 account is exhausted while withdrawing $1,000/month:**
+**If profits are withdrawn**, the account never builds a buffer and the
+arithmetic is brutal: at a sustained 5%/month — world-class for this asset
+class — withdrawing $1,000/month empties a $5,000 account in **six months**,
+deterministically, before variance. At 10%/month it lasts seven. Sizing up to
+chase the target makes ruin near-certain (P(ruin within 12 months) ~93.7% at a
+genuine 2pp edge sized to target). **Do not withdraw from a $5,000 account.**
 
-| Sustained monthly return | Account exhausted after |
-|---|---|
-| 0% | 5 months |
-| **5%/month** (world-class for this asset class) | **6 months** |
-| **10%/month** (extraordinary) | **7 months** |
-| 15%/month | 10 months |
-| 20%/month | never — but flat at $5,000 forever, zero buffer, one bad month is fatal |
-| 25%/month | grows |
+**If profits compound**, the picture changes completely, because $1,000 is a
+shrinking percentage of a growing account:
 
-Read the 5% row again. At a genuinely excellent, *sustained* 5%/month —
-better than almost anyone in this asset class achieves — withdrawing
-$1,000/month empties the account in six months. Not probably. Arithmetically,
-before variance is considered at all.
+| Month | Account | % needed that month for $1,000 |
+|---|---|---|
+| 1 | $5,000 | **20.0%** |
+| 3 | $7,000 | 14.3% |
+| 6 | $10,000 | 10.0% |
+| 12 | $16,000 | 6.2% |
+| 24 | $28,000 | 3.6% |
+| 36 | $40,000 | **2.5%** |
 
-Add realistic variance and it gets worse: **P(ruin within 12 months) is ~93.7%
-at a genuine 2pp edge sized to hit the target, and ~99.2% at a genuine 3pp edge
-with textbook half-Kelly sizing.** Correct risk management does not rescue
-this — it makes the failure arrive faster and more reliably, because a
-correctly-sized 3pp edge on $5,000 generates $30–100/month and you are removing
-$1,000.
+The first year is the hard part. After that the target eases into the range a
+real edge could plausibly sustain.
 
-**The honest reframe: $1,000 in a good month is achievable. $1,000 every month,
-withdrawn, from $5,000, is not — and attempting it is itself the thing that
-destroys the account.**
+### The right way to state the goal
+
+**$1,000/month is an account-size milestone, not a return-rate milestone.**
+At a sustainable rate `r`, it simply requires an account of `$1,000 / r`:
+
+| Sustained rate | Annualised | Account needed | Years from $5,000, no contributions |
+|---|---|---|---|
+| 1%/month | 13% | $100,000 | 25.1 |
+| **2%/month** | **27%** | **$50,000** | **9.7** |
+| 3%/month | 43% | $33,333 | 5.3 |
+| 5%/month | 80% | $20,000 | 2.4 |
+
+Compounding alone from $5,000 is slow, because the base is small. Adding
+outside savings changes it dramatically:
+
+| Sustained rate | +$500/month | +$2,000/month |
+|---|---|---|
+| 1%/month | 8.4 years | 3.2 years |
+| **2%/month** | **3.9 years** | **1.6 years** |
+| 3%/month | 2.4 years | 1.0 year |
+| 5%/month | 1.2 years | 0.5 years |
+
+**The practical consequence: for roughly the first two years your savings rate
+matters more than your trading edge.** At $5,000 and 3%/month the system earns
+$150/month while $500/month of savings contributes over three times as much.
+Trading returns only overtake a $500/month contribution once the account passes
+about $17,000. Until then, the edge's job is to *exist and be validated*, not
+to pay you.
 
 The sharpest way to see the size of the ask: **a trader compounding 20%/month
 for three years from $5,000 would end with more lifetime profit than Domer —
