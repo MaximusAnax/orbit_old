@@ -4,6 +4,10 @@ An automated trading system for prediction markets (Kalshi and Polymarket),
 built around logical-consistency arbitrage, with a market-data recorder, a
 backtester, hard risk limits, and a dashboard.
 
+**New here? [`START_HERE.md`](START_HERE.md) is the sequenced plan** — what to
+run today, this week, and before any real money. Total spend before you learn
+whether this works: about $30.
+
 ---
 
 ## Read this before anything else
